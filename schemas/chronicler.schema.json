@@ -1,0 +1,109 @@
+{
+  "$defs": {
+    "CrossChapterConnection": {
+      "properties": {
+        "connection_id": {
+          "description": "รหัสความเชื่อมโยง เช่น CON-001",
+          "title": "Connection Id",
+          "type": "string"
+        },
+        "from_entity": {
+          "description": "เอนทิตีต้นทาง (ตัวละคร/สถานที่/องค์กร)",
+          "title": "From Entity",
+          "type": "string"
+        },
+        "to_entity": {
+          "description": "เอนทิตีปลายทาง",
+          "title": "To Entity",
+          "type": "string"
+        },
+        "connection_type": {
+          "description": "ความสัมพันธ์ เช่น meeting, reference, rivalry, object_transfer",
+          "title": "Connection Type",
+          "type": "string"
+        },
+        "description": {
+          "description": "อธิบายความเชื่อมโยงหรือการอ้างอิงข้ามตอน",
+          "title": "Description",
+          "type": "string"
+        },
+        "in_scene_id": {
+          "description": "ผูกกับรหัสฉากจาก Pass 1.1",
+          "title": "In Scene Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "connection_id",
+        "from_entity",
+        "to_entity",
+        "connection_type",
+        "description",
+        "in_scene_id"
+      ],
+      "title": "CrossChapterConnection",
+      "type": "object"
+    },
+    "LoreDiscovery": {
+      "properties": {
+        "discovery_id": {
+          "description": "รหัสการค้นพบ เช่น DSC-001",
+          "title": "Discovery Id",
+          "type": "string"
+        },
+        "description": {
+          "description": "ข้อมูลตำนาน เกร็ดประวัติศาสตร์ หรือความลับของโลกที่ถูกเปิดเผย",
+          "title": "Description",
+          "type": "string"
+        },
+        "source": {
+          "description": "แหล่งที่มาของข้อมูล เช่น Chapter text, Character statement",
+          "title": "Source",
+          "type": "string"
+        },
+        "evidence_quote": {
+          "description": "ข้อความในเนื้อเรื่องที่ใช้เป็นหลักฐานประกอบการค้นพบ",
+          "title": "Evidence Quote",
+          "type": "string"
+        },
+        "in_scene_id": {
+          "description": "ผูกกับรหัสฉากจาก Pass 1.1",
+          "title": "In Scene Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "discovery_id",
+        "description",
+        "source",
+        "evidence_quote",
+        "in_scene_id"
+      ],
+      "title": "LoreDiscovery",
+      "type": "object"
+    }
+  },
+  "description": "Schema สำหรับ Pass 1.3: เชื่อมโยงข้อมูลตอนปัจจุบันเข้ากับ Global Lore",
+  "properties": {
+    "cross_chapter_connections": {
+      "items": {
+        "$ref": "#/$defs/CrossChapterConnection"
+      },
+      "title": "Cross Chapter Connections",
+      "type": "array"
+    },
+    "lore_discoveries": {
+      "items": {
+        "$ref": "#/$defs/LoreDiscovery"
+      },
+      "title": "Lore Discoveries",
+      "type": "array"
+    }
+  },
+  "required": [
+    "cross_chapter_connections",
+    "lore_discoveries"
+  ],
+  "title": "ChroniclerOutput",
+  "type": "object"
+}

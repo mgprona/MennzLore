@@ -1,0 +1,325 @@
+{
+  "chapter_id": "EP001",
+  "chapter_title": "I",
+  "key_plot_points": [
+    {
+      "point_id": "KPP-001",
+      "order": 1,
+      "description": "Dane Thorson, acting-Cargo-Master, finishes a grueling day refitting the Solar Queen on the steamy water-world of Xecho and returns to the ship to report to Captain Jellico.",
+      "characters_involved": [
+        "Dane Thorson",
+        "Jellico"
+      ],
+      "in_scene_id": "SC-001"
+    },
+    {
+      "point_id": "KPP-002",
+      "order": 2,
+      "description": "A visitor arrives at the ship's ramp: Kort Asaki, Chief Ranger from the planet Khatka, who states Captain Jellico expects him and is shown to the captain's cabin.",
+      "characters_involved": [
+        "Dane Thorson",
+        "Kort Asaki"
+      ],
+      "in_scene_id": "SC-002"
+    },
+    {
+      "point_id": "KPP-003",
+      "order": 3,
+      "description": "While preparing supper, Dane and Medic Tau discuss Khatka's history — a colony founded by escaped prisoners that developed a reverse color bar, the rise of the Five Families, and the lucrative hunting-preserve trade with Combine.",
+      "characters_involved": [
+        "Dane Thorson",
+        "Tau"
+      ],
+      "in_scene_id": "SC-003"
+    },
+    {
+      "point_id": "KPP-004",
+      "order": 4,
+      "description": "Asaki enters the mess cabin and reveals that a 'killing magic' — death by a beast that is not a beast — is being used to murder key men of Khatka, and asks Tau to study it.",
+      "characters_involved": [
+        "Kort Asaki",
+        "Tau",
+        "Jellico",
+        "Dane Thorson"
+      ],
+      "in_scene_id": "SC-003"
+    },
+    {
+      "point_id": "KPP-005",
+      "order": 5,
+      "description": "Jellico reveals the crew is invited to Khatka as Asaki's personal guests; Jellico to survey the Zoboru preserve, Tau to covertly investigate the magic, and Dane invited along to muddle the trail. Departure is set for mid-afternoon the next day.",
+      "characters_involved": [
+        "Jellico",
+        "Kort Asaki",
+        "Tau",
+        "Dane Thorson"
+      ],
+      "in_scene_id": "SC-003"
+    }
+  ],
+  "scene_details": [
+    {
+      "scene_id": "SC-001",
+      "order": 1,
+      "location": "Xecho spaceport and the Solar Queen",
+      "description": "Dane Thorson studies the treacherous sea from a promontory, then plods back through the spaceport to the air-conditioned Solar Queen, bathes, and dresses after a long day of refitting work.",
+      "visual_details": "A water-logged, steam-bath world; bright treacherous sea full of flesh-eating organisms; hot sand; the cool air-conditioned ship interior with a cat ladder and cabins.",
+      "mood": "weary, oppressive heat giving way to relief",
+      "characters_present_in_scene": [
+        "Dane Thorson"
+      ]
+    },
+    {
+      "scene_id": "SC-002",
+      "order": 2,
+      "location": "Ramp and corridor of the Solar Queen",
+      "description": "Dane answers the ramp buzzer to find Kort Asaki, the tall, dark Chief Ranger of Khatka, who is escorted up the ladder to Captain Jellico's cabin.",
+      "visual_details": "Asaki is tall and lean, with black blue-sheened skin, saffron-yellow shorts, two wide chest straps with a gem-fire medallion, a Patrol-like blaster, and a jeweled knife. Queex the hoobat screeches from Jellico's cabin.",
+      "mood": "guarded, impressed, formal",
+      "characters_present_in_scene": [
+        "Dane Thorson",
+        "Kort Asaki"
+      ]
+    },
+    {
+      "scene_id": "SC-003",
+      "order": 3,
+      "location": "Mess cabin of the Solar Queen",
+      "description": "Dane prepares supper while Tau recounts Khatka's history; Asaki and Jellico enter, the cat Sindbad befriends the Ranger, and Asaki reveals the killing magic threatening his world and extends the invitation to Khatka.",
+      "visual_details": "Cramped mess cabin with snap seats and a coffee dispenser; Sindbad the ship's cat weaving and purring around Asaki, perching in his arm.",
+      "mood": "conversational shifting to ominous and tense",
+      "characters_present_in_scene": [
+        "Dane Thorson",
+        "Tau",
+        "Kort Asaki",
+        "Jellico"
+      ]
+    }
+  ],
+  "characters_present": [
+    "Dane Thorson",
+    "Kort Asaki",
+    "Captain Jellico",
+    "Tau",
+    "Sindbad",
+    "Queex"
+  ],
+  "character_behaviors": [
+    {
+      "character": "Dane Thorson",
+      "behavior": "Studied the treacherous sea through sun goggles from a promontory, then plodded back through the sand to the Solar Queen after a long day of work",
+      "behavior_type": "action",
+      "in_scene_id": "SC-001"
+    },
+    {
+      "character": "Dane Thorson",
+      "behavior": "Went to answer the ramp buzzer on his guard, expecting the supervisor-rigger, and was impressed by the visitor",
+      "behavior_type": "action",
+      "in_scene_id": "SC-002"
+    },
+    {
+      "character": "Kort Asaki",
+      "behavior": "Saluted palm out and announced himself, then ascended the cat ladder easily, missing no detail of the ship's interior",
+      "behavior_type": "action",
+      "in_scene_id": "SC-002"
+    },
+    {
+      "character": "Kort Asaki",
+      "behavior": "Went down on one knee for Sindbad's sniff, picked up the cat, and explained the killing magic threatening Khatka with cold rage",
+      "behavior_type": "action",
+      "in_scene_id": "SC-003"
+    },
+    {
+      "character": "Tau",
+      "behavior": "Sat nursing Terran coffee and recounted Khatka's history and his views on magic as real conditioned force",
+      "behavior_type": "speech",
+      "in_scene_id": "SC-003"
+    },
+    {
+      "character": "Dane Thorson",
+      "behavior": "Dropped the packet of steak concentrate in surprise when Asaki suddenly loomed in the mess doorway",
+      "behavior_type": "reaction",
+      "in_scene_id": "SC-003"
+    },
+    {
+      "character": "Sindbad",
+      "behavior": "Wove a pattern about the Ranger's legs purring, then jumped to his knee and clawed for a hold on his chest belts",
+      "behavior_type": "action",
+      "in_scene_id": "SC-003"
+    },
+    {
+      "character": "Queex",
+      "behavior": "Let out a horrible screech and thumped on the floor of its cage when Dane rapped on Jellico's cabin door",
+      "behavior_type": "reaction",
+      "in_scene_id": "SC-002"
+    }
+  ],
+  "items_of_interest": [
+    {
+      "item": "Solar Queen",
+      "description": "A Free Trader ship being refitted to serve as a mail ship on a tight schedule",
+      "role_in_chapter": "The ship the crew operates and the setting for the meeting that launches the Khatka journey",
+      "in_scene_id": "SC-001"
+    },
+    {
+      "item": "Asaki's weapons and medallion",
+      "description": "A Patrol-like deadly blaster, a long knife in a jeweled fringed sheath, and a gem-fire medallion crossing his chest straps",
+      "role_in_chapter": "Mark Kort Asaki as barbaric force tamed to civilized efficiency, signaling his rank and the danger he represents",
+      "in_scene_id": "SC-002"
+    },
+    {
+      "item": "Khatka guest rights",
+      "description": "Jealously guarded, extremely valuable visiting privileges on Khatka that Rangers may grant",
+      "role_in_chapter": "The incredible offer extended to the crew, providing the cover and reason for the mission",
+      "in_scene_id": "SC-003"
+    }
+  ],
+  "dialogue_summaries": [
+    {
+      "dialogue_id": "DLG-001",
+      "participants": [
+        "Dane Thorson",
+        "Kort Asaki"
+      ],
+      "topic": "Asaki's arrival and identity",
+      "summary": "Asaki introduces himself at the ramp, saying Captain Jellico expects him, and Dane recognizes him as the Chief Ranger from Khatka.",
+      "key_quotes": [
+        "I am Kort Asaki. I believe Captain Jellico expects me.",
+        "Yes, sir!"
+      ],
+      "in_scene_id": "SC-002"
+    },
+    {
+      "dialogue_id": "DLG-002",
+      "participants": [
+        "Dane Thorson",
+        "Tau"
+      ],
+      "topic": "Khatka's history and culture",
+      "summary": "Tau tells Dane about Khatka, founded by escaped prisoners after the Second Atomic War, its reverse color bar, the rise of the Five Families, and its lucrative hunting trade plagued by poachers.",
+      "key_quotes": [
+        "Khatka!",
+        "Now there's a planet worth visiting.",
+        "The colony was founded by escaped prisoners--and just one racial stock.",
+        "Wherever you have a rigidly controlled export you're going to have poachers and smugglers."
+      ],
+      "in_scene_id": "SC-003"
+    },
+    {
+      "dialogue_id": "DLG-003",
+      "participants": [
+        "Kort Asaki",
+        "Tau",
+        "Captain Jellico",
+        "Dane Thorson"
+      ],
+      "topic": "The killing magic on Khatka and the invitation",
+      "summary": "Asaki questions Tau about magic as real conditioned force, reveals a killing magic—death by a beast that is not a beast—is eliminating key men on Khatka, and invites the crew as personal guests to investigate while surveying the Zoboru preserve.",
+      "key_quotes": [
+        "I think that its present manifestation--death by a beast that is not a beast--could be worth your detailed study.",
+        "Because it is a killing magic and it is being carefully used to rid my world of key men, men we need badly.",
+        "We are invited to visit Khatka and survey a new hunting range as Chief Ranger Asaki's personal term guests."
+      ],
+      "in_scene_id": "SC-003"
+    }
+  ],
+  "cross_chapter_connections": [
+    {
+      "connection_id": "CON-001",
+      "from_entity": "killing magic",
+      "to_entity": "'killing magic' mystery",
+      "connection_type": "reference",
+      "description": "The 'beast that is not a beast' killing key men is the central mystery the crew is recruited to investigate, an arc that runs from this chapter through EP008",
+      "in_scene_id": "SC-003"
+    },
+    {
+      "connection_id": "CON-002",
+      "from_entity": "Kort Asaki",
+      "to_entity": "Lumbrilo",
+      "connection_type": "reference",
+      "description": "The Chief Ranger who issues the invitation to Khatka, setting the entire story in motion and serving as the crew's host and ally against the magic that will be wielded by the witch doctor Lumbrilo",
+      "in_scene_id": "SC-002"
+    },
+    {
+      "connection_id": "CON-003",
+      "from_entity": "Tau",
+      "to_entity": "Hunting magic",
+      "connection_type": "reference",
+      "description": "Medic Tau's expertise in magic as real conditioned force is why Asaki wants him to covertly study the killing magic, establishing his role as the investigator of Khatkan magic for the rest of the story",
+      "in_scene_id": "SC-003"
+    },
+    {
+      "connection_id": "CON-004",
+      "from_entity": "Zoboru preserve",
+      "to_entity": "Zoboru preserve",
+      "connection_type": "reference",
+      "description": "Surveying the new Zoboru hunting range is the official cover reason for the Solar Queen crew's trip to Khatka",
+      "in_scene_id": "SC-003"
+    },
+    {
+      "connection_id": "CON-005",
+      "from_entity": "Solar Queen",
+      "to_entity": "Solar Queen",
+      "connection_type": "reference",
+      "description": "The Free Trader ship being refitted on Xecho is the vessel that carries the crew to Khatka, the recurring setting and base for the crew throughout the series",
+      "in_scene_id": "SC-001"
+    },
+    {
+      "connection_id": "CON-006",
+      "from_entity": "Sindbad",
+      "to_entity": "Sindbad",
+      "connection_type": "reference",
+      "description": "The ship's cat befriends Asaki, who calls him a small lion; Sindbad appears only in EP001, marking this chapter as his sole appearance",
+      "in_scene_id": "SC-003"
+    },
+    {
+      "connection_id": "CON-007",
+      "from_entity": "Combine",
+      "to_entity": "Combine",
+      "connection_type": "reference",
+      "description": "The Combine holds the Khatkan hunting-preserve trade charter, framing the commercial backdrop against which the Free Traders operate",
+      "in_scene_id": "SC-003"
+    }
+  ],
+  "lore_discoveries": [
+    {
+      "discovery_id": "DSC-001",
+      "description": "A 'killing magic' — death by a beast that is not a beast — is being deliberately used to eliminate key men Khatka badly needs",
+      "source": "Chapter text (mystery)",
+      "evidence_quote": "Introduces the central mystery driving the entire EP001->EP008 arc and the reason the crew is drawn into Khatka's affairs",
+      "in_scene_id": "SC-003"
+    },
+    {
+      "discovery_id": "DSC-002",
+      "description": "Khatka was founded by escaped prisoners after the Second Atomic War from a single racial stock, developing a reverse color bar and the ruling Five Families who preserve civilization through a lucrative hunting trade",
+      "source": "Chapter text (history)",
+      "evidence_quote": "Establishes the world-building and political foundation of Khatka that grounds the rest of the story",
+      "in_scene_id": "SC-003"
+    },
+    {
+      "discovery_id": "DSC-003",
+      "description": "Kort Asaki, Chief Ranger of Khatka, can grant jealously guarded guest rights and invites the Solar Queen crew as his personal guests",
+      "source": "Chapter text (character)",
+      "evidence_quote": "Introduces the key ally character and the mechanism by which the crew gains access to a closed world",
+      "in_scene_id": "SC-002"
+    },
+    {
+      "discovery_id": "DSC-004",
+      "description": "Tau views magic as a real conditioned force rather than superstition, making him uniquely suited to investigate Khatkan magic",
+      "source": "Chapter text (character)",
+      "evidence_quote": "Defines Tau's expertise in comparative magic/psychology that becomes central to confronting the magic threat later in the story",
+      "in_scene_id": "SC-003"
+    },
+    {
+      "discovery_id": "DSC-005",
+      "description": "The mission has a hidden structure: Jellico openly surveys the Zoboru preserve, Tau covertly investigates the magic, and Dane is brought along to muddle the trail",
+      "source": "Chapter text (relationship)",
+      "evidence_quote": "Establishes the covert investigative purpose beneath the official trade trip that shapes the crew's actions on Khatka",
+      "in_scene_id": "SC-003"
+    }
+  ],
+  "tags": [],
+  "total_events_count": 5,
+  "total_scenes_count": 3,
+  "total_dialogues_count": 3
+}

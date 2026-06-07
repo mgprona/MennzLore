@@ -1,0 +1,140 @@
+{
+  "$defs": {
+    "KeyPlotPoint": {
+      "properties": {
+        "point_id": {
+          "description": "รหัสเหตุการณ์ เช่น KPP-001",
+          "title": "Point Id",
+          "type": "string"
+        },
+        "order": {
+          "description": "ลำดับของเหตุการณ์ในตอน",
+          "title": "Order",
+          "type": "integer"
+        },
+        "description": {
+          "description": "สรุปเหตุการณ์สั้นๆ ว่าเกิดอะไรขึ้น",
+          "title": "Description",
+          "type": "string"
+        },
+        "characters_involved": {
+          "description": "รายชื่อตัวละครที่มีส่วนร่วมในเหตุการณ์นี้",
+          "items": {
+            "type": "string"
+          },
+          "title": "Characters Involved",
+          "type": "array"
+        },
+        "in_scene_id": {
+          "description": "รหัสฉากที่เกิดเหตุการณ์นี้ เช่น SC-001",
+          "title": "In Scene Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "point_id",
+        "order",
+        "description",
+        "characters_involved",
+        "in_scene_id"
+      ],
+      "title": "KeyPlotPoint",
+      "type": "object"
+    },
+    "SceneDetail": {
+      "properties": {
+        "scene_id": {
+          "description": "รหัสฉาก เช่น SC-001",
+          "title": "Scene Id",
+          "type": "string"
+        },
+        "order": {
+          "description": "ลำดับของฉากในตอน",
+          "title": "Order",
+          "type": "integer"
+        },
+        "location": {
+          "description": "สถานที่เกิดเหตุ",
+          "title": "Location",
+          "type": "string"
+        },
+        "description": {
+          "description": "สรุปว่าเกิดอะไรขึ้นในฉากนี้",
+          "title": "Description",
+          "type": "string"
+        },
+        "visual_details": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "รายละเอียดสภาพแวดล้อม แสง สี หรือสิ่งของรอบๆ",
+          "title": "Visual Details"
+        },
+        "mood": {
+          "description": "โทนอารมณ์ของฉาก เช่น ตึงเครียด, ตลก, ลึกลับ",
+          "title": "Mood",
+          "type": "string"
+        },
+        "characters_present_in_scene": {
+          "description": "ตัวละครทั้งหมดที่ปรากฏตัวในฉากนี้",
+          "items": {
+            "type": "string"
+          },
+          "title": "Characters Present In Scene",
+          "type": "array"
+        }
+      },
+      "required": [
+        "scene_id",
+        "order",
+        "location",
+        "description",
+        "mood",
+        "characters_present_in_scene"
+      ],
+      "title": "SceneDetail",
+      "type": "object"
+    }
+  },
+  "description": "Schema สำหรับ Pass 1.1: เน้นจับโครงสร้างฉากและเหตุการณ์หลักเท่านั้น",
+  "properties": {
+    "chapter_id": {
+      "description": "รหัสตอน เช่น EP002",
+      "title": "Chapter Id",
+      "type": "string"
+    },
+    "chapter_title": {
+      "description": "ชื่อตอน",
+      "title": "Chapter Title",
+      "type": "string"
+    },
+    "key_plot_points": {
+      "items": {
+        "$ref": "#/$defs/KeyPlotPoint"
+      },
+      "title": "Key Plot Points",
+      "type": "array"
+    },
+    "scene_details": {
+      "items": {
+        "$ref": "#/$defs/SceneDetail"
+      },
+      "title": "Scene Details",
+      "type": "array"
+    }
+  },
+  "required": [
+    "chapter_id",
+    "chapter_title",
+    "key_plot_points",
+    "scene_details"
+  ],
+  "title": "ArchitectOutput",
+  "type": "object"
+}

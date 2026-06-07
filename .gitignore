@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Project output data — repo is the TOOL, not the RESULTS.
+# Per-novel runs live in their own project dirs, never committed here.
+raw/
+clean/
+micro_facts/
+analysis/
+verification/
+qa/
+tmp/
+*.bak
+*.bak_*
+
+# Secrets
+.env
+*.key

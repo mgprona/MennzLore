@@ -1,0 +1,409 @@
+{
+  "$defs": {
+    "CharacterBehavior": {
+      "properties": {
+        "character": {
+          "description": "ชื่อตัวละคร",
+          "title": "Character",
+          "type": "string"
+        },
+        "behavior": {
+          "description": "พฤติกรรมหรือการกระทำที่เด่นชัดในฉาก",
+          "title": "Behavior",
+          "type": "string"
+        },
+        "behavior_type": {
+          "description": "ประเภทพฤติกรรม เช่น speech, action, reaction, thought",
+          "title": "Behavior Type",
+          "type": "string"
+        },
+        "in_scene_id": {
+          "description": "ผูกกับรหัสฉากจาก Pass 1.1",
+          "title": "In Scene Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "character",
+        "behavior",
+        "behavior_type",
+        "in_scene_id"
+      ],
+      "title": "CharacterBehavior",
+      "type": "object"
+    },
+    "CrossChapterConnection": {
+      "properties": {
+        "connection_id": {
+          "description": "รหัสความเชื่อมโยง เช่น CON-001",
+          "title": "Connection Id",
+          "type": "string"
+        },
+        "from_entity": {
+          "description": "เอนทิตีต้นทาง (ตัวละคร/สถานที่/องค์กร)",
+          "title": "From Entity",
+          "type": "string"
+        },
+        "to_entity": {
+          "description": "เอนทิตีปลายทาง",
+          "title": "To Entity",
+          "type": "string"
+        },
+        "connection_type": {
+          "description": "ความสัมพันธ์ เช่น meeting, reference, rivalry, object_transfer",
+          "title": "Connection Type",
+          "type": "string"
+        },
+        "description": {
+          "description": "อธิบายความเชื่อมโยงหรือการอ้างอิงข้ามตอน",
+          "title": "Description",
+          "type": "string"
+        },
+        "in_scene_id": {
+          "description": "ผูกกับรหัสฉากจาก Pass 1.1",
+          "title": "In Scene Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "connection_id",
+        "from_entity",
+        "to_entity",
+        "connection_type",
+        "description",
+        "in_scene_id"
+      ],
+      "title": "CrossChapterConnection",
+      "type": "object"
+    },
+    "DialogueSummary": {
+      "properties": {
+        "dialogue_id": {
+          "description": "รหัสบทสนทนา เช่น DLG-001",
+          "title": "Dialogue Id",
+          "type": "string"
+        },
+        "participants": {
+          "description": "ผู้ร่วมสนทนา",
+          "items": {
+            "type": "string"
+          },
+          "title": "Participants",
+          "type": "array"
+        },
+        "topic": {
+          "description": "หัวข้อที่คุยกัน",
+          "title": "Topic",
+          "type": "string"
+        },
+        "summary": {
+          "description": "สรุปสาระสำคัญของบทสนทนา",
+          "title": "Summary",
+          "type": "string"
+        },
+        "key_quotes": {
+          "description": "ประเด็นคำพูดเด็ดๆ หรือเบาะแสที่หลุดมาจากปากตัวละคร",
+          "items": {
+            "type": "string"
+          },
+          "title": "Key Quotes",
+          "type": "array"
+        },
+        "in_scene_id": {
+          "description": "ผูกกับรหัสฉากจาก Pass 1.1",
+          "title": "In Scene Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dialogue_id",
+        "participants",
+        "topic",
+        "summary",
+        "key_quotes",
+        "in_scene_id"
+      ],
+      "title": "DialogueSummary",
+      "type": "object"
+    },
+    "ItemOfInterest": {
+      "properties": {
+        "item": {
+          "description": "ชื่อสิ่งของ/ไอเทมที่น่าสนใจ",
+          "title": "Item",
+          "type": "string"
+        },
+        "description": {
+          "description": "รายละเอียดหรือคุณสมบัติของสิ่งของ",
+          "title": "Description",
+          "type": "string"
+        },
+        "role_in_chapter": {
+          "description": "บทบาทของสิ่งของนี้ในตอน",
+          "title": "Role In Chapter",
+          "type": "string"
+        },
+        "in_scene_id": {
+          "description": "ผูกกับรหัสฉากจาก Pass 1.1",
+          "title": "In Scene Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "item",
+        "description",
+        "role_in_chapter",
+        "in_scene_id"
+      ],
+      "title": "ItemOfInterest",
+      "type": "object"
+    },
+    "KeyPlotPoint": {
+      "properties": {
+        "point_id": {
+          "description": "รหัสเหตุการณ์ เช่น KPP-001",
+          "title": "Point Id",
+          "type": "string"
+        },
+        "order": {
+          "description": "ลำดับของเหตุการณ์ในตอน",
+          "title": "Order",
+          "type": "integer"
+        },
+        "description": {
+          "description": "สรุปเหตุการณ์สั้นๆ ว่าเกิดอะไรขึ้น",
+          "title": "Description",
+          "type": "string"
+        },
+        "characters_involved": {
+          "description": "รายชื่อตัวละครที่มีส่วนร่วมในเหตุการณ์นี้",
+          "items": {
+            "type": "string"
+          },
+          "title": "Characters Involved",
+          "type": "array"
+        },
+        "in_scene_id": {
+          "description": "รหัสฉากที่เกิดเหตุการณ์นี้ เช่น SC-001",
+          "title": "In Scene Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "point_id",
+        "order",
+        "description",
+        "characters_involved",
+        "in_scene_id"
+      ],
+      "title": "KeyPlotPoint",
+      "type": "object"
+    },
+    "LoreDiscovery": {
+      "properties": {
+        "discovery_id": {
+          "description": "รหัสการค้นพบ เช่น DSC-001",
+          "title": "Discovery Id",
+          "type": "string"
+        },
+        "description": {
+          "description": "ข้อมูลตำนาน เกร็ดประวัติศาสตร์ หรือความลับของโลกที่ถูกเปิดเผย",
+          "title": "Description",
+          "type": "string"
+        },
+        "source": {
+          "description": "แหล่งที่มาของข้อมูล เช่น Chapter text, Character statement",
+          "title": "Source",
+          "type": "string"
+        },
+        "evidence_quote": {
+          "description": "ข้อความในเนื้อเรื่องที่ใช้เป็นหลักฐานประกอบการค้นพบ",
+          "title": "Evidence Quote",
+          "type": "string"
+        },
+        "in_scene_id": {
+          "description": "ผูกกับรหัสฉากจาก Pass 1.1",
+          "title": "In Scene Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "discovery_id",
+        "description",
+        "source",
+        "evidence_quote",
+        "in_scene_id"
+      ],
+      "title": "LoreDiscovery",
+      "type": "object"
+    },
+    "SceneDetail": {
+      "properties": {
+        "scene_id": {
+          "description": "รหัสฉาก เช่น SC-001",
+          "title": "Scene Id",
+          "type": "string"
+        },
+        "order": {
+          "description": "ลำดับของฉากในตอน",
+          "title": "Order",
+          "type": "integer"
+        },
+        "location": {
+          "description": "สถานที่เกิดเหตุ",
+          "title": "Location",
+          "type": "string"
+        },
+        "description": {
+          "description": "สรุปว่าเกิดอะไรขึ้นในฉากนี้",
+          "title": "Description",
+          "type": "string"
+        },
+        "visual_details": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "รายละเอียดสภาพแวดล้อม แสง สี หรือสิ่งของรอบๆ",
+          "title": "Visual Details"
+        },
+        "mood": {
+          "description": "โทนอารมณ์ของฉาก เช่น ตึงเครียด, ตลก, ลึกลับ",
+          "title": "Mood",
+          "type": "string"
+        },
+        "characters_present_in_scene": {
+          "description": "ตัวละครทั้งหมดที่ปรากฏตัวในฉากนี้",
+          "items": {
+            "type": "string"
+          },
+          "title": "Characters Present In Scene",
+          "type": "array"
+        }
+      },
+      "required": [
+        "scene_id",
+        "order",
+        "location",
+        "description",
+        "mood",
+        "characters_present_in_scene"
+      ],
+      "title": "SceneDetail",
+      "type": "object"
+    }
+  },
+  "description": "โครงสร้างสมบูรณ์แบบที่รวมทุกอย่างเข้าด้วยกัน พร้อม @model_validator",
+  "properties": {
+    "chapter_id": {
+      "description": "รหัสตอน เช่น EP002",
+      "title": "Chapter Id",
+      "type": "string"
+    },
+    "chapter_title": {
+      "description": "ชื่อตอน",
+      "title": "Chapter Title",
+      "type": "string"
+    },
+    "key_plot_points": {
+      "items": {
+        "$ref": "#/$defs/KeyPlotPoint"
+      },
+      "title": "Key Plot Points",
+      "type": "array"
+    },
+    "scene_details": {
+      "items": {
+        "$ref": "#/$defs/SceneDetail"
+      },
+      "title": "Scene Details",
+      "type": "array"
+    },
+    "characters_present": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Characters Present",
+      "type": "array"
+    },
+    "character_behaviors": {
+      "items": {
+        "$ref": "#/$defs/CharacterBehavior"
+      },
+      "title": "Character Behaviors",
+      "type": "array"
+    },
+    "items_of_interest": {
+      "items": {
+        "$ref": "#/$defs/ItemOfInterest"
+      },
+      "title": "Items Of Interest",
+      "type": "array"
+    },
+    "dialogue_summaries": {
+      "items": {
+        "$ref": "#/$defs/DialogueSummary"
+      },
+      "title": "Dialogue Summaries",
+      "type": "array"
+    },
+    "cross_chapter_connections": {
+      "items": {
+        "$ref": "#/$defs/CrossChapterConnection"
+      },
+      "title": "Cross Chapter Connections",
+      "type": "array"
+    },
+    "lore_discoveries": {
+      "items": {
+        "$ref": "#/$defs/LoreDiscovery"
+      },
+      "title": "Lore Discoveries",
+      "type": "array"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    },
+    "total_events_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Total Events Count",
+      "type": "integer"
+    },
+    "total_scenes_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Total Scenes Count",
+      "type": "integer"
+    },
+    "total_dialogues_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Total Dialogues Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "chapter_id",
+    "chapter_title",
+    "key_plot_points",
+    "scene_details",
+    "characters_present",
+    "character_behaviors",
+    "items_of_interest",
+    "dialogue_summaries",
+    "cross_chapter_connections",
+    "lore_discoveries"
+  ],
+  "title": "MicroFactsFinal",
+  "type": "object"
+}

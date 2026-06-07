@@ -1,0 +1,158 @@
+{
+  "$defs": {
+    "CharacterBehavior": {
+      "properties": {
+        "character": {
+          "description": "ชื่อตัวละคร",
+          "title": "Character",
+          "type": "string"
+        },
+        "behavior": {
+          "description": "พฤติกรรมหรือการกระทำที่เด่นชัดในฉาก",
+          "title": "Behavior",
+          "type": "string"
+        },
+        "behavior_type": {
+          "description": "ประเภทพฤติกรรม เช่น speech, action, reaction, thought",
+          "title": "Behavior Type",
+          "type": "string"
+        },
+        "in_scene_id": {
+          "description": "ผูกกับรหัสฉากจาก Pass 1.1",
+          "title": "In Scene Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "character",
+        "behavior",
+        "behavior_type",
+        "in_scene_id"
+      ],
+      "title": "CharacterBehavior",
+      "type": "object"
+    },
+    "DialogueSummary": {
+      "properties": {
+        "dialogue_id": {
+          "description": "รหัสบทสนทนา เช่น DLG-001",
+          "title": "Dialogue Id",
+          "type": "string"
+        },
+        "participants": {
+          "description": "ผู้ร่วมสนทนา",
+          "items": {
+            "type": "string"
+          },
+          "title": "Participants",
+          "type": "array"
+        },
+        "topic": {
+          "description": "หัวข้อที่คุยกัน",
+          "title": "Topic",
+          "type": "string"
+        },
+        "summary": {
+          "description": "สรุปสาระสำคัญของบทสนทนา",
+          "title": "Summary",
+          "type": "string"
+        },
+        "key_quotes": {
+          "description": "ประเด็นคำพูดเด็ดๆ หรือเบาะแสที่หลุดมาจากปากตัวละคร",
+          "items": {
+            "type": "string"
+          },
+          "title": "Key Quotes",
+          "type": "array"
+        },
+        "in_scene_id": {
+          "description": "ผูกกับรหัสฉากจาก Pass 1.1",
+          "title": "In Scene Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dialogue_id",
+        "participants",
+        "topic",
+        "summary",
+        "key_quotes",
+        "in_scene_id"
+      ],
+      "title": "DialogueSummary",
+      "type": "object"
+    },
+    "ItemOfInterest": {
+      "properties": {
+        "item": {
+          "description": "ชื่อสิ่งของ/ไอเทมที่น่าสนใจ",
+          "title": "Item",
+          "type": "string"
+        },
+        "description": {
+          "description": "รายละเอียดหรือคุณสมบัติของสิ่งของ",
+          "title": "Description",
+          "type": "string"
+        },
+        "role_in_chapter": {
+          "description": "บทบาทของสิ่งของนี้ในตอน",
+          "title": "Role In Chapter",
+          "type": "string"
+        },
+        "in_scene_id": {
+          "description": "ผูกกับรหัสฉากจาก Pass 1.1",
+          "title": "In Scene Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "item",
+        "description",
+        "role_in_chapter",
+        "in_scene_id"
+      ],
+      "title": "ItemOfInterest",
+      "type": "object"
+    }
+  },
+  "description": "Schema สำหรับ Pass 1.2: สกัด Data เชิงลึกโดยอิง scene_id จาก Pass 1.1",
+  "properties": {
+    "characters_present": {
+      "description": "รายชื่อตัวละครทั้งหมดที่พบในตอนนี้ (รวมทุกคน)",
+      "items": {
+        "type": "string"
+      },
+      "title": "Characters Present",
+      "type": "array"
+    },
+    "character_behaviors": {
+      "items": {
+        "$ref": "#/$defs/CharacterBehavior"
+      },
+      "title": "Character Behaviors",
+      "type": "array"
+    },
+    "items_of_interest": {
+      "items": {
+        "$ref": "#/$defs/ItemOfInterest"
+      },
+      "title": "Items Of Interest",
+      "type": "array"
+    },
+    "dialogue_summaries": {
+      "items": {
+        "$ref": "#/$defs/DialogueSummary"
+      },
+      "title": "Dialogue Summaries",
+      "type": "array"
+    }
+  },
+  "required": [
+    "characters_present",
+    "character_behaviors",
+    "items_of_interest",
+    "dialogue_summaries"
+  ],
+  "title": "ProfilerOutput",
+  "type": "object"
+}

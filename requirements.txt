@@ -1,0 +1,2 @@
+# MennzLore engine dependencies
+pydantic>=2.0
