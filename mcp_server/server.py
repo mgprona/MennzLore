@@ -24,7 +24,7 @@ from engine.chart_render_generic import build_chart
 from engine.verify_names import verify_names
 from engine.rag_memory import query_past_lore
 from engine.image_generator import generate_storyboard
-from engine.youtube_acquire import analyze_playlist_transcripts, run_playlist_acquisition
+from engine.youtube_acquire import analyze_playlist_transcripts, run_playlist_acquisition, get_working_proxy_pool
 import subprocess
 import socket
 
@@ -188,21 +188,39 @@ def generate_storyboard_tool(project_dir: str, prefix: str, approved_scenes: lis
         return f"[ERROR] Storyboard generation threw exception: {e}"
 
 @mcp.tool()
-def analyze_youtube_playlist(playlist_url: str) -> dict:
+def analyze_youtube_playlist(playlist_url: str, use_proxies: bool = False) -> dict:
     """
     Scan a YouTube playlist or video URL and check subtitle availability
     (manual, auto-generated, or missing).
     
     Args:
         playlist_url: The YouTube playlist or single video URL.
+        use_proxies: Set to True to scrape and rotate proxies if rate limited.
     """
     try:
-        return analyze_playlist_transcripts(playlist_url)
+        # Check if we should initialize a proxy pool for the scan
+        proxy_pool = []
+        if use_proxies:
+            proxy_pool = get_working_proxy_pool(limit=5)
+            
+        # Try scan
+        scan_errors = []
+        try:
+            return analyze_playlist_transcripts(playlist_url)
+        except Exception as e:
+            scan_errors.append(str(e))
+            if use_proxies and proxy_pool:
+                for p in proxy_pool:
+                    try:
+                        return analyze_playlist_transcripts(playlist_url, proxy=p)
+                    except Exception as err:
+                        scan_errors.append(str(err))
+            raise Exception(f"Failed to scan playlist metadata: {scan_errors}")
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 @mcp.tool()
-def run_youtube_acquisition(playlist_url: str, project_dir: str, prefix: str, approved: bool = False, model_id: str = "openai/whisper-large-v3-turbo") -> dict:
+def run_youtube_acquisition(playlist_url: str, project_dir: str, prefix: str, approved: bool = False, model_id: str = "openai/whisper-large-v3-turbo", use_proxies: bool = False) -> dict:
     """
     Run full YouTube transcript/STT acquisition.
     Pulls free transcripts or uses Whisper STT via OpenRouter for missing subtitles (if approved).
@@ -213,9 +231,10 @@ def run_youtube_acquisition(playlist_url: str, project_dir: str, prefix: str, ap
         prefix: Project prefix (e.g. 'dyfed').
         approved: Set to True if the user has approved the cost of doing Whisper STT.
         model_id: The OpenRouter model ID to use for audio transcription.
+        use_proxies: Set to True to scrape and rotate proxies to prevent rate limiting.
     """
     try:
-        return run_playlist_acquisition(playlist_url, project_dir, prefix, approved=approved, model_id=model_id)
+        return run_playlist_acquisition(playlist_url, project_dir, prefix, approved=approved, model_id=model_id, use_proxies=use_proxies)
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

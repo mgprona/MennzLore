@@ -12,6 +12,8 @@ import base64
 import re
 import subprocess
 import requests
+import random
+from concurrent.futures import ThreadPoolExecutor
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 
@@ -24,11 +26,67 @@ def run_cmd(cmd):
     res = subprocess.run(cmd, shell=True, capture_output=True, text=True, encoding="utf-8", errors="ignore")
     return res.returncode, res.stdout, res.stderr
 
-def get_playlist_metadata(playlist_url):
+def fetch_free_http_proxies():
+    """Fetch fresh HTTP proxies from monosans/proxy-list repository."""
+    url = "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt"
+    try:
+        print("Fetching fresh HTTP proxies from repository...")
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            proxies = response.text.strip().split("\n")
+            print(f"  [OK] Fetched {len(proxies)} proxies from source.")
+            return proxies
+    except Exception as e:
+        print(f"Failed to fetch proxy list: {e}")
+    return []
+
+def validate_proxy_worker(proxy, valid_proxies, test_url="https://www.youtube.com/robots.txt", timeout=3):
+    """Test if an HTTP proxy is functional and fast enough."""
+    proxy_dict = {
+        "http": f"http://{proxy}",
+        "https": f"http://{proxy}"
+    }
+    try:
+        # Check by making a HEAD request to target test_url with short timeout
+        r = requests.head(test_url, proxies=proxy_dict, timeout=timeout)
+        if r.status_code in [200, 301, 302, 404, 403]: # 403 or 404 is still an alive proxy response
+            valid_proxies.append(proxy_dict)
+    except Exception:
+        pass
+
+def get_working_proxy_pool(limit=10, test_url="https://www.youtube.com/robots.txt", timeout=3):
+    """Scan and validate a pool of working proxies using threads."""
+    raw_proxies = fetch_free_http_proxies()
+    if not raw_proxies:
+        return []
+        
+    print(f"Validating proxies (checking first 150 for efficiency)...")
+    # Shuffle so we don't always check the same ones
+    random.shuffle(raw_proxies)
+    candidate_proxies = raw_proxies[:150]
+    
+    valid_proxies = []
+    with ThreadPoolExecutor(max_workers=30) as executor:
+        for proxy in candidate_proxies:
+            executor.submit(validate_proxy_worker, proxy, valid_proxies, test_url, timeout)
+            
+    print(f"Found {len(valid_proxies)} working proxies.")
+    return valid_proxies[:limit]
+
+def get_playlist_metadata(playlist_url, proxy=None):
     """Scan playlist using yt-dlp flat-playlist mode and return entries."""
     print(f"Scanning playlist metadata for: {playlist_url} ...")
+    
+    proxy_str = None
+    if isinstance(proxy, dict):
+        proxy_str = proxy.get("http") or proxy.get("https")
+    elif isinstance(proxy, str):
+        proxy_str = proxy
+        
+    proxy_arg = f'--proxy "{proxy_str}"' if proxy_str else ''
+    
     # Call yt-dlp to get flat JSON list of playlist entries
-    cmd = f'yt-dlp --flat-playlist --dump-single-json "{playlist_url}"'
+    cmd = f'yt-dlp {proxy_arg} --flat-playlist --dump-single-json "{playlist_url}"'
     code, out, err = run_cmd(cmd)
     if code != 0:
         raise Exception(f"yt-dlp failed to read playlist metadata: {err}")
@@ -43,10 +101,10 @@ def get_playlist_metadata(playlist_url):
     except Exception as e:
         raise Exception(f"Failed to parse playlist JSON: {e}")
 
-def check_subtitles_availability(video_id):
+def check_subtitles_availability(video_id, proxies=None):
     """Check if Thai (th) or English (en) transcripts are available on YouTube."""
     try:
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id, proxies=proxies)
         # Try to find Thai or English manual/auto transcripts
         languages = ['th', 'en']
         for lang in languages:
@@ -72,14 +130,13 @@ def check_subtitles_availability(video_id):
         "transcript_obj": None
     }
 
-def download_and_clean_subtitles(video_id, transcript_meta):
+def download_and_clean_subtitles(video_id, transcript_meta, proxies=None):
     """Download existing subtitles and merge timestamps into a clean text block."""
     try:
         t_obj = transcript_meta.get("transcript_obj")
-        if t_obj:
-            data = t_obj.fetch()
-        else:
-            data = YouTubeTranscriptApi.get_transcript(video_id, languages=['th', 'en'])
+        lang_code = t_obj.language_code if t_obj else 'th'
+        # Pass proxies to get_transcript
+        data = YouTubeTranscriptApi.get_transcript(video_id, languages=[lang_code, 'th', 'en'], proxies=proxies)
             
         # Merge subtitle rows
         lines = []
@@ -99,11 +156,21 @@ def download_and_clean_subtitles(video_id, transcript_meta):
     except Exception as e:
         raise Exception(f"Failed to download/clean subtitles: {e}")
 
-def download_and_compress_audio(video_url, output_mp3_path):
+def download_and_compress_audio(video_url, output_mp3_path, proxy=None):
     """Download low bitrate mono MP3 of the video using yt-dlp."""
     print(f"Downloading and compressing audio for: {video_url} ...")
+    
+    # Extract proxy string if dictionary was provided
+    proxy_str = None
+    if isinstance(proxy, dict):
+        proxy_str = proxy.get("http") or proxy.get("https")
+    elif isinstance(proxy, str):
+        proxy_str = proxy
+        
+    proxy_arg = f'--proxy "{proxy_str}"' if proxy_str else ''
+    
     # yt-dlp args: extract audio, convert to mp3, set quality to 32k mono
-    cmd = f'yt-dlp -x --audio-format mp3 --audio-quality 32k -o "{output_mp3_path.replace(".mp3", "")}" "{video_url}"'
+    cmd = f'yt-dlp {proxy_arg} -x --audio-format mp3 --audio-quality 32k -o "{output_mp3_path.replace(".mp3", "")}" "{video_url}"'
     code, out, err = run_cmd(cmd)
     
     # yt-dlp might append .mp3 automatically or keep the format.
@@ -161,9 +228,23 @@ def transcribe_audio_openrouter(api_key, mp3_path, model_id=DEFAULT_MODEL):
         
     return transcription
 
-def analyze_playlist_transcripts(playlist_url):
+def analyze_playlist_transcripts(playlist_url, proxy=None):
     """Scan the playlist and determine subtitle/STT status of each video."""
-    title, entries = get_playlist_metadata(playlist_url)
+    # Convert proxy dict to proxy string for yt-dlp if needed
+    proxy_str = None
+    if isinstance(proxy, dict):
+        proxy_str = proxy.get("http") or proxy.get("https")
+    elif isinstance(proxy, str):
+        proxy_str = proxy
+        
+    # Standard proxy dict for requests / youtube-transcript-api
+    proxy_dict = None
+    if isinstance(proxy, dict):
+        proxy_dict = proxy
+    elif isinstance(proxy, str):
+        proxy_dict = {"http": proxy, "https": proxy}
+        
+    title, entries = get_playlist_metadata(playlist_url, proxy=proxy_str)
     
     analysis_results = []
     total_stt_sec = 0
@@ -177,7 +258,7 @@ def analyze_playlist_transcripts(playlist_url):
         # Duration check
         duration = entry.get("duration", 0) or 0
         
-        sub_meta = check_subtitles_availability(video_id)
+        sub_meta = check_subtitles_availability(video_id, proxies=proxy_dict)
         
         status = {
             "index": idx + 1,
@@ -206,12 +287,38 @@ def analyze_playlist_transcripts(playlist_url):
         "videos": analysis_results
     }
 
-def run_playlist_acquisition(playlist_url, project_dir, prefix, approved=False, model_id=DEFAULT_MODEL):
+def run_playlist_acquisition(playlist_url, project_dir, prefix, approved=False, model_id=DEFAULT_MODEL, use_proxies=False):
     """Full execution flow: Scan, (optionally report & confirm), download, and save transcripts."""
     api_key = os.environ.get("OPENROUTER_API_KEY")
     
-    # 1. Analyze
-    analysis = analyze_playlist_transcripts(playlist_url)
+    # Initialize proxy pool if enabled
+    proxy_pool = []
+    if use_proxies:
+        print("Proxy pool is enabled. Initializing HTTP proxies...")
+        proxy_pool = get_working_proxy_pool(limit=10)
+        if not proxy_pool:
+            print("WARNING: Failed to fetch any working proxies. Proceeding without proxies.")
+            
+    # 1. Analyze with retry fallback rotation
+    analysis = None
+    scan_errors = []
+    try:
+        analysis = analyze_playlist_transcripts(playlist_url)
+    except Exception as e:
+        scan_errors.append(str(e))
+        print(f"Initial scan failed without proxy: {e}")
+        if use_proxies and proxy_pool:
+            for p in proxy_pool:
+                try:
+                    print(f"Retrying scan using proxy: {p['http']} ...")
+                    analysis = analyze_playlist_transcripts(playlist_url, proxy=p)
+                    break
+                except Exception as err:
+                     scan_errors.append(str(err))
+                     print(f"Scan failed using proxy: {err}")
+                     
+    if not analysis:
+        raise Exception(f"Failed to scan playlist metadata. Errors: {scan_errors}")
     
     print("\n" + "="*50)
     print("        YouTube Lore Source Analysis")
@@ -237,6 +344,7 @@ def run_playlist_acquisition(playlist_url, project_dir, prefix, approved=False, 
     print(f"- STT Transcription: {stt_count} episodes (Requires API credits)")
     print(f"- Total Audio Duration to transcribe: {analysis['total_stt_duration_str']}")
     print(f"- Target STT Model: {model_id}")
+    print(f"- Proxy Mode: {'ENABLED (Pool size: ' + str(len(proxy_pool)) + ')' if use_proxies else 'DISABLED'}")
     print("="*50)
     
     if not approved:
@@ -275,7 +383,31 @@ def run_playlist_acquisition(playlist_url, project_dir, prefix, approved=False, 
             if v["subtitles_available"]:
                 # Free download
                 print("  Pulling subtitles from YouTube transcript list...")
-                text = download_and_clean_subtitles(v["id"], v["sub_meta"])
+                
+                success = False
+                errors = []
+                text = ""
+                # Try without proxy first
+                try:
+                    text = download_and_clean_subtitles(v["id"], v["sub_meta"])
+                    success = True
+                except Exception as e:
+                    errors.append(str(e))
+                    print(f"  Failed without proxy: {e}")
+                    if use_proxies and proxy_pool:
+                        for p in proxy_pool:
+                            try:
+                                print(f"  Retrying subtitle download using proxy: {p['http']} ...")
+                                text = download_and_clean_subtitles(v["id"], v["sub_meta"], proxies=p)
+                                success = True
+                                break
+                            except Exception as err:
+                                errors.append(str(err))
+                                print(f"  Failed using proxy: {err}")
+                                
+                if not success:
+                    raise Exception(f"All subtitle download attempts failed. Errors: {errors}")
+                    
                 with open(file_path, "w", encoding="utf-8") as out:
                     out.write(text)
                 print(f"  [OK] Saved transcript to: {os.path.basename(file_path)} ({len(text):,} chars)")
@@ -283,7 +415,29 @@ def run_playlist_acquisition(playlist_url, project_dir, prefix, approved=False, 
             else:
                 # STT required
                 mp3_path = os.path.join(temp_dir, f"{prefix}_{ep_num}.mp3")
-                download_and_compress_audio(v["url"], mp3_path)
+                
+                success = False
+                errors = []
+                # Try download audio without proxy first
+                try:
+                    download_and_compress_audio(v["url"], mp3_path)
+                    success = True
+                except Exception as e:
+                    errors.append(str(e))
+                    print(f"  Audio download failed without proxy: {e}")
+                    if use_proxies and proxy_pool:
+                        for p in proxy_pool:
+                            try:
+                                print(f"  Retrying audio download using proxy: {p['http']} ...")
+                                download_and_compress_audio(v["url"], mp3_path, proxy=p)
+                                success = True
+                                break
+                            except Exception as err:
+                                errors.append(str(err))
+                                print(f"  Failed using proxy: {err}")
+                                
+                if not success:
+                    raise Exception(f"All audio download attempts failed. Errors: {errors}")
                 
                 # Transcribe
                 text = transcribe_audio_openrouter(api_key, mp3_path, model_id)
@@ -319,15 +473,16 @@ def run_playlist_acquisition(playlist_url, project_dir, prefix, approved=False, 
 
 def main():
     if len(sys.argv) < 4:
-        print("Usage: python youtube_acquire.py <playlist_url> <project_dir> <prefix>")
+        print("Usage: python youtube_acquire.py <playlist_url> <project_dir> <prefix> [--use-proxies]")
         sys.exit(1)
         
     playlist_url = sys.argv[1]
     project_dir = sys.argv[2]
     prefix = sys.argv[3]
+    use_proxies = "--use-proxies" in sys.argv
     
     try:
-        run_playlist_acquisition(playlist_url, project_dir, prefix, approved=False)
+        run_playlist_acquisition(playlist_url, project_dir, prefix, approved=False, use_proxies=use_proxies)
     except Exception as e:
         print(f"\n[FATAL ERROR] {e}")
         sys.exit(1)
