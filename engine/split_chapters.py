@@ -36,7 +36,19 @@ _END   = re.compile(r'\*{3}\s*END OF THE PROJECT GUTENBERG', re.I)
 # ── chapter heading patterns ─────────────────────────────────────────────────
 
 _HEADING_PATTERNS = [
-    re.compile(r'^(chapter|part)\s+\w+', re.I),          # Chapter 1, Chapter One, Part II
+    # "Chapter 1", "Chapter One", "Part II" — must be followed by a number,
+    # Roman numeral, or spelled-out number-word (guards against TOC lines like
+    # "CHAPTER            PAGE" where the trailing word is not an ordinal).
+    re.compile(
+        r'^(chapter|part)\s+'
+        r'(\d+'
+        r'|[ivxlcdm]+'
+        r'|one|two|three|four|five|six|seven|eight|nine|ten'
+        r'|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty'
+        r'|thirty|forty|fifty|first|second|third|fourth|fifth|last)'
+        r'\b',
+        re.I,
+    ),
     re.compile(r'^[IVXLC]+\.?\s*$'),                      # I  II  III  IV ...
 ]
 
@@ -110,6 +122,12 @@ def split_chapters(project_dir: str, prefix: str) -> list[dict]:
     # split into chunks: [heading_i .. next_heading_i)
     clean_dir = os.path.join(project_dir, "clean")
     os.makedirs(clean_dir, exist_ok=True)
+
+    # clear stale EP files from a previous run so a shorter split can't leave
+    # orphaned chapters that downstream phases would miscount
+    import glob as _glob
+    for stale in _glob.glob(os.path.join(clean_dir, f"{prefix}_EP*.txt")):
+        os.remove(stale)
 
     chapters = []
     for ep_idx, hi in enumerate(heading_indices):

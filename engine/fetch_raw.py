@@ -38,10 +38,16 @@ GUTENBERG_URL   = "https://www.gutenberg.org/cache/epub/{id}/pg{id}.txt"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
+_USER_AGENT = "Mozilla/5.0 (compatible; MennzLore/1.0; +https://github.com/mgprona/MennzLore)"
+
+
 def _get(url: str, retries: int = 3, timeout: int = 60) -> bytes:
+    # Default Python-urllib UA is frequently rejected (503/403) by gutendex
+    # and Gutenberg; send a real UA so requests are accepted.
+    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     for attempt in range(retries):
         try:
-            with urllib.request.urlopen(url, timeout=timeout) as r:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
                 return r.read()
         except Exception as e:
             if attempt == retries - 1:

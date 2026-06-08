@@ -258,6 +258,93 @@ def run_gutenberg_acquire(book_id: str, prefix: str, raw_dir: str, url_override:
         return {"status": "error", "message": str(e)}
 
 @mcp.tool()
+def acquire_by_title(title: str, author: str, base_dir: str = ".") -> dict:
+    """
+    Phase 1 (recommended): Find a public-domain book by TITLE + AUTHOR via gutendex,
+    download its raw text (PG-19 first, Project Gutenberg fallback), scaffold the
+    project directory, and write provenance. Output uses the canonical
+    `<prefix>_full.txt` naming that the downstream pipeline expects.
+
+    Args:
+        title: Book title (e.g. 'Voodoo Planet').
+        author: Author name (e.g. 'Andre Norton').
+        base_dir: Directory under which the `<prefix>/` project folder is created (default: cwd).
+    """
+    from engine.fetch_raw import fetch_raw
+    try:
+        provenance = fetch_raw(title, author, base_dir)
+        return {"status": "success", "result": provenance}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+def split_into_chapters(project_dir: str, prefix: str = "") -> dict:
+    """
+    Phase 2: Strip Gutenberg boilerplate from the raw full-text and split it into
+    per-chapter files `clean/<prefix>_EP###.txt`, detecting chapter headings with a
+    blank-line guard. Also writes a chapter manifest.
+
+    Args:
+        project_dir: Path to the project directory (must contain raw/<prefix>_full.txt).
+        prefix: Project prefix (optional, defaults to project directory name).
+    """
+    from engine.split_chapters import split_chapters
+    try:
+        if not prefix:
+            prefix = os.path.basename(project_dir.rstrip("/\\"))
+        chapters = split_chapters(project_dir, prefix)
+        return {"status": "success", "chapters": len(chapters),
+                "episodes": [c["ep_id"] for c in chapters]}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+def run_global_lore(project_dir: str, prefix: str = "", model: str = "gpt-4o") -> dict:
+    """
+    Phase 3.1: Read all clean chapter files and extract global lore + name map +
+    timeline framework + chapter appearances via an LLM (OpenAI Structured Outputs).
+    Requires OPENAI_API_KEY in the environment.
+
+    Args:
+        project_dir: Path to the project directory (must contain clean/<prefix>_EP###.txt).
+        prefix: Project prefix (optional, defaults to project directory name).
+        model: OpenAI model ID (defaults to gpt-4o).
+    """
+    from engine.phase3_global_lore import run_phase3_global_lore
+    try:
+        if not prefix:
+            prefix = os.path.basename(project_dir.rstrip("/\\"))
+        result = run_phase3_global_lore(project_dir, prefix, model=model)
+        return {
+            "status": "success",
+            "characters": len(result["global_lore"].get("characters", [])),
+            "name_map_entries": len(result["name_map"].get("name_map", {})),
+            "timeline_entries": len(result["timeline_framework"].get("timeline_framework", [])),
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+def auto_verify_names(project_dir: str, prefix: str = "") -> dict:
+    """
+    Phase 3.2: Deterministically cross-reference the generated name_map against the
+    clean chapter texts (no LLM). Flags entries declared but never found, ellipsis/
+    truncation, and foreign-script leakage. Writes a validation report and updates
+    pipeline state.
+
+    Args:
+        project_dir: Path to the project directory (must contain verification/<prefix>_name_map.json).
+        prefix: Project prefix (optional, defaults to project directory name).
+    """
+    from engine.phase3_auto_verify import run_auto_verify
+    try:
+        if not prefix:
+            prefix = os.path.basename(project_dir.rstrip("/\\"))
+        return run_auto_verify(project_dir, prefix)
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
 def run_saga_assembly(saga_dir: str) -> dict:
     """
     Saga Mode: Run Saga timeline creation, compile the Master Saga Lorebook,
