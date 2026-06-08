@@ -183,31 +183,48 @@ function animateMapForEpisode(episodeId) {
     const svgEl = mapContainer.querySelector('svg');
     if (!svgEl) return;
     
-    // Parse episodes mentioned in locations/routes from the metadata
     const locations = svgEl.querySelectorAll('#locations g');
     const routes = svgEl.querySelectorAll('#routes g');
     
-    // Fade out everything not mentioned in this episode, highlight matching ones
     locations.forEach(loc => {
         const name = loc.getAttribute('data-name');
         const matches = checkLocationInEpisode(name, episodeId);
         
+        loc.style.transition = 'opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1)';
+        const circle = loc.querySelector('circle');
+        const text = loc.querySelector('text');
+        
+        if (circle) {
+            circle.style.transition = 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1)';
+        }
+        if (text) {
+            text.style.transition = 'all 0.8s cubic-bezier(0.4, 0, 0.2, 1)';
+        }
+        
         if (matches) {
             loc.style.opacity = '1';
-            const circle = loc.querySelector('circle');
             if (circle) {
-                circle.setAttribute('r', '8');
+                circle.setAttribute('r', '10');
                 circle.style.fill = '#3b82f6';
                 circle.style.stroke = '#ffffff';
                 circle.style.strokeWidth = '2';
+                circle.classList.add('pulse-node');
+            }
+            if (text) {
+                text.style.fill = '#ffffff';
+                text.style.fontWeight = '700';
             }
         } else {
             loc.style.opacity = '0.25';
-            const circle = loc.querySelector('circle');
             if (circle) {
                 circle.setAttribute('r', '4');
                 circle.style.fill = '#5a4a3a';
                 circle.style.stroke = 'none';
+                circle.classList.remove('pulse-node');
+            }
+            if (text) {
+                text.style.fill = '#9ca3af';
+                text.style.fontWeight = '400';
             }
         }
         
@@ -222,22 +239,31 @@ function animateMapForEpisode(episodeId) {
     routes.forEach(route => {
         const from = route.getAttribute('data-from');
         const to = route.getAttribute('data-to');
-        
-        // Simple logic: route is active if both locations are active
         const active = checkLocationInEpisode(from, episodeId) && checkLocationInEpisode(to, episodeId);
-        if (active) {
-            route.style.opacity = '1';
-            const line = route.querySelector('line');
-            if (line) {
+        
+        const line = route.querySelector('line');
+        if (line) {
+            line.style.transition = 'stroke-dashoffset 1s cubic-bezier(0.4, 0, 0.2, 1), opacity 1s ease-in-out';
+            
+            // Calculate line length for the dashoffset drawing animation
+            const x1 = parseFloat(line.getAttribute('x1') || 0);
+            const y1 = parseFloat(line.getAttribute('y1') || 0);
+            const x2 = parseFloat(line.getAttribute('x2') || 0);
+            const y2 = parseFloat(line.getAttribute('y2') || 0);
+            const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+            
+            line.style.strokeDasharray = length;
+            
+            if (active) {
+                route.style.opacity = '1';
                 line.style.stroke = '#ef4444';
                 line.style.strokeWidth = '2.5';
-            }
-        } else {
-            route.style.opacity = '0.08';
-            const line = route.querySelector('line');
-            if (line) {
+                line.style.strokeDashoffset = '0';
+            } else {
+                route.style.opacity = '0.08';
                 line.style.stroke = '#8b3a3a';
                 line.style.strokeWidth = '1.5';
+                line.style.strokeDashoffset = length;
             }
         }
     });
@@ -285,6 +311,47 @@ function renderDetails(epData) {
     
     html += `
         <div class="section-title" style="margin-top:20px;">
+            <span class="material-icons-round">person_outline</span>
+            Character Status Changes
+        </div>
+    `;
+    
+    if (epData.character_states && epData.character_states.length > 0) {
+        epData.character_states.forEach(cs => {
+            let badgeColor = 'rgba(59, 130, 246, 0.2)';
+            let textColor = '#60a5fa';
+            if (cs.state === 'deceased' || cs.state === 'dead') {
+                badgeColor = 'rgba(239, 68, 68, 0.2)';
+                textColor = '#f87171';
+            } else if (cs.state === 'injured') {
+                badgeColor = 'rgba(245, 158, 11, 0.2)';
+                textColor = '#fbbf24';
+            } else if (cs.state === 'missing') {
+                badgeColor = 'rgba(156, 163, 175, 0.2)';
+                textColor = '#d1d5db';
+            } else if (cs.state === 'transformed') {
+                badgeColor = 'rgba(167, 139, 250, 0.2)';
+                textColor = '#c084fc';
+            }
+            
+            html += `
+                <div class="detail-card">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <h4 style="margin-bottom:0;">${cs.character}</h4>
+                        <span style="font-size:10px; font-weight:600; padding:2px 6px; border-radius:4px; background:${badgeColor}; color:${textColor}; text-transform:uppercase;">
+                            ${cs.state}
+                        </span>
+                    </div>
+                    <p style="margin-top: 4px;">${cs.description} (Scene ${cs.in_scene_id})</p>
+                </div>
+            `;
+        });
+    } else {
+        html += `<p style="font-size:13px; color:var(--text-secondary);">No status changes in this episode.</p>`;
+    }
+    
+    html += `
+        <div class="section-title" style="margin-top:20px;">
             <span class="material-icons-round">local_offer</span>
             Items of Interest
         </div>
@@ -294,9 +361,11 @@ function renderDetails(epData) {
         epData.items_of_interest.forEach(item => {
             html += `
                 <div class="detail-card">
-                    <h4>${item.item}</h4>
+                    <h4>${item.item} (Scene ${item.in_scene_id})</h4>
                     <p>${item.description}</p>
-                    <p style="font-style:italic; font-size:12px; margin-top:4px; color:var(--text-secondary);">Role: ${item.role_in_chapter}</p>
+                    ${item.owner ? `<p style="font-size:12px; margin-top:6px; color:var(--text-primary);"><strong>Owner:</strong> ${item.owner}</p>` : ''}
+                    ${item.location ? `<p style="font-size:12px; margin-top:2px; color:var(--text-primary);"><strong>Location:</strong> ${item.location}</p>` : ''}
+                    <p style="font-style:italic; font-size:12px; margin-top:6px; color:var(--text-secondary);">Role: ${item.role_in_chapter}</p>
                 </div>
             `;
         });

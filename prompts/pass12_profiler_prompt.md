@@ -33,6 +33,16 @@ Every item MUST reference a `scene_id` from the Architect's scene list below.
       "item": "Name of the item",
       "description": "What it is or what it looks like",
       "role_in_chapter": "Why it matters in this chapter",
+      "in_scene_id": "SC-001",
+      "owner": "CharacterName or null",
+      "location": "LocationName or null"
+    }
+  ],
+  "character_states": [
+    {
+      "character": "CharacterName",
+      "state": "active|injured|missing|deceased|transformed",
+      "description": "Short explanation of their condition or status change in this scene",
       "in_scene_id": "SC-001"
     }
   ],

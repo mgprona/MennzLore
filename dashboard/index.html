@@ -305,6 +305,28 @@
             box-shadow: 0 4px 20px rgba(0,0,0,0.5);
             z-index: 100;
         }
+        
+        @keyframes pulse {
+            0% {
+                stroke-width: 2px;
+                stroke: #ffffff;
+                filter: drop-shadow(0 0 2px #3b82f6);
+            }
+            50% {
+                stroke-width: 4px;
+                stroke: #60a5fa;
+                filter: drop-shadow(0 0 8px #60a5fa);
+            }
+            100% {
+                stroke-width: 2px;
+                stroke: #ffffff;
+                filter: drop-shadow(0 0 2px #3b82f6);
+            }
+        }
+        
+        .pulse-node {
+            animation: pulse 2s infinite ease-in-out;
+        }
     </style>
 </head>
 <body>

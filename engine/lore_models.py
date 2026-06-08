@@ -54,6 +54,15 @@ class ItemOfInterest(BaseModel):
     description: str = Field(..., description="รายละเอียดหรือคุณสมบัติของสิ่งของ")
     role_in_chapter: str = Field(..., description="บทบาทของสิ่งของนี้ในตอน")
     in_scene_id: str = Field(..., description="ผูกกับรหัสฉากจาก Pass 1.1")
+    owner: Optional[str] = Field(None, description="ผู้ครอบครองสิ่งของนี้ในฉาก (ถ้ามี)")
+    location: Optional[str] = Field(None, description="สถานที่ตั้งของสิ่งของนี้ในฉาก (ถ้ามี)")
+
+
+class CharacterState(BaseModel):
+    character: str = Field(..., description="ชื่อตัวละคร")
+    state: str = Field(..., description="สถานะของตัวละครในฉาก เช่น active, injured, missing, deceased, transformed")
+    description: str = Field(..., description="คำอธิบายสั้นๆ ของสถานะในฉากนี้")
+    in_scene_id: str = Field(..., description="ผูกกับรหัสฉากจาก Pass 1.1")
 
 
 class DialogueSummary(BaseModel):
@@ -70,6 +79,7 @@ class ProfilerOutput(BaseModel):
     characters_present: List[str] = Field(..., description="รายชื่อตัวละครทั้งหมดที่พบในตอนนี้ (รวมทุกคน)")
     character_behaviors: List[CharacterBehavior]
     items_of_interest: List[ItemOfInterest]
+    character_states: List[CharacterState] = Field(default_factory=list, description="สถานะตัวละครในแต่ละฉาก")
     dialogue_summaries: List[DialogueSummary]
 
 
@@ -113,6 +123,7 @@ class MicroFactsFinal(BaseModel):
     characters_present: List[str]
     character_behaviors: List[CharacterBehavior]
     items_of_interest: List[ItemOfInterest]
+    character_states: List[CharacterState] = Field(default_factory=list)
     dialogue_summaries: List[DialogueSummary]
     cross_chapter_connections: List[CrossChapterConnection]
     lore_discoveries: List[LoreDiscovery]
@@ -144,6 +155,12 @@ class MicroFactsFinal(BaseModel):
             if item.in_scene_id not in existing_scenes:
                 raise ValueError(
                     f"HALLUCINATION: item '{item.item}' references scene {item.in_scene_id}"
+                )
+        for cs in self.character_states:
+            if cs.in_scene_id not in existing_scenes:
+                raise ValueError(
+                    f"HALLUCINATION: character state '{cs.character}: {cs.state}' "
+                    f"references scene {cs.in_scene_id}"
                 )
         for dlg in self.dialogue_summaries:
             if dlg.in_scene_id not in existing_scenes:

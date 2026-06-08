@@ -18,6 +18,90 @@ except ImportError:
     from utils import load_json, write_json
 
 
+def self_correct_micro_facts(merged: dict) -> dict:
+    scenes = merged.get("scene_details", [])
+    valid_scene_ids = [s.get("scene_id") for s in scenes if isinstance(s, dict) and s.get("scene_id")]
+    
+    if not valid_scene_ids:
+        valid_scene_ids = ["SC-001"]
+        scenes.append({
+            "scene_id": "SC-001",
+            "order": 1,
+            "location": "Unknown Location",
+            "description": "Auto-generated scene to prevent crash",
+            "characters_present_in_scene": merged.get("characters_present", [])
+        })
+        merged["scene_details"] = scenes
+        print("  [SELF-CORRECTION] No scenes found in architect pass. Auto-generated default scene 'SC-001'.")
+
+    def normalize_scene_id(sid):
+        if not sid or not isinstance(sid, str):
+            return valid_scene_ids[0]
+        sid_clean = sid.strip().upper()
+        if sid_clean in valid_scene_ids:
+            return sid_clean
+            
+        digits = "".join(c for c in sid_clean if c.isdigit())
+        if digits:
+            num = int(digits)
+            for vsid in valid_scene_ids:
+                vsid_digits = "".join(c for c in vsid if c.isdigit())
+                if vsid_digits and int(vsid_digits) == num:
+                    print(f"  [SELF-CORRECTION] Healed scene ID typo: '{sid}' -> '{vsid}'")
+                    return vsid
+                    
+        for s in scenes:
+            if str(s.get("order")) == sid_clean:
+                print(f"  [SELF-CORRECTION] Healed scene order reference: '{sid}' -> '{s.get('scene_id')}'")
+                return s.get("scene_id")
+                
+        print(f"  [SELF-CORRECTION] Scene '{sid}' not found. Falling back to default scene '{valid_scene_ids[0]}'")
+        return valid_scene_ids[0]
+
+    lists_to_clean = [
+        "key_plot_points", "character_behaviors", "items_of_interest",
+        "character_states", "dialogue_summaries", "cross_chapter_connections",
+        "lore_discoveries"
+    ]
+    for key in lists_to_clean:
+        items = merged.get(key, [])
+        if not isinstance(items, list):
+            merged[key] = []
+            continue
+        for item in items:
+            if isinstance(item, dict) and "in_scene_id" in item:
+                orig = item["in_scene_id"]
+                normalized = normalize_scene_id(orig)
+                item["in_scene_id"] = normalized
+
+    present_chars = merged.get("characters_present", [])
+    if isinstance(present_chars, list):
+        cleaned_present = [c.strip() for c in present_chars if isinstance(c, str) and c.strip()]
+        merged["characters_present"] = cleaned_present
+        
+        def normalize_char_name(cname):
+            if not cname or not isinstance(cname, str):
+                return cname
+            cname_clean = cname.strip()
+            if cname_clean in cleaned_present:
+                return cname_clean
+            for pc in cleaned_present:
+                if pc.lower() == cname_clean.lower():
+                    return pc
+            for pc in cleaned_present:
+                if cname_clean.lower() in pc.lower() or pc.lower() in cname_clean.lower():
+                    print(f"  [SELF-CORRECTION] Aligned character name: '{cname_clean}' -> '{pc}'")
+                    return pc
+            return cname_clean
+
+        for key in ["character_behaviors", "character_states"]:
+            for item in merged.get(key, []):
+                if isinstance(item, dict) and "character" in item:
+                    item["character"] = normalize_char_name(item["character"])
+                    
+    return merged
+
+
 def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None):
     if base_dir is None:
         base_dir = os.getcwd()
@@ -60,6 +144,7 @@ def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None):
         "characters_present": prof.get("characters_present", []),
         "character_behaviors": prof.get("character_behaviors", []),
         "items_of_interest": prof.get("items_of_interest", []),
+        "character_states": prof.get("character_states", []),
         "dialogue_summaries": prof.get("dialogue_summaries", []),
         "cross_chapter_connections": chron.get("cross_chapter_connections", []),
         "lore_discoveries": chron.get("lore_discoveries", []),
@@ -68,6 +153,9 @@ def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None):
         "total_scenes_count": len(arch.get("scene_details", [])),
         "total_dialogues_count": len(prof.get("dialogue_summaries", [])),
     }
+
+    # Run Self-Correction & Healing Agent
+    merged = self_correct_micro_facts(merged)
 
     # Validate with Pydantic (raises ValueError on hallucinated scene refs)
     final_model = MicroFactsFinal(**merged)

@@ -25,7 +25,11 @@
   ],
   "items_of_interest": [
     {"item": "shirt of Nessus", "description": "A magical shirt that gives youth",
-     "role_in_chapter": "Given to Jurgen by Nessus", "in_scene_id": "SC-003"}
+     "role_in_chapter": "Given to Jurgen by Nessus", "in_scene_id": "SC-003",
+     "owner": "Jurgen", "location": "Nessus's Cave"}
+  ],
+  "character_states": [
+    {"character": "Jurgen", "state": "active", "description": "Walking home and talking to a monk", "in_scene_id": "SC-001"}
   ],
   "dialogue_summaries": [
     {"dialogue_id": "DLG-001", "participants": ["Jurgen", "the monk"],

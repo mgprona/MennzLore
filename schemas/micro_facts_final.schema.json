@@ -32,6 +32,38 @@
       "title": "CharacterBehavior",
       "type": "object"
     },
+    "CharacterState": {
+      "properties": {
+        "character": {
+          "description": "ชื่อตัวละคร",
+          "title": "Character",
+          "type": "string"
+        },
+        "state": {
+          "description": "สถานะของตัวละครในฉาก เช่น active, injured, missing, deceased, transformed",
+          "title": "State",
+          "type": "string"
+        },
+        "description": {
+          "description": "คำอธิบายสั้นๆ ของสถานะในฉากนี้",
+          "title": "Description",
+          "type": "string"
+        },
+        "in_scene_id": {
+          "description": "ผูกกับรหัสฉากจาก Pass 1.1",
+          "title": "In Scene Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "character",
+        "state",
+        "description",
+        "in_scene_id"
+      ],
+      "title": "CharacterState",
+      "type": "object"
+    },
     "CrossChapterConnection": {
       "properties": {
         "connection_id": {
@@ -147,6 +179,32 @@
           "description": "ผูกกับรหัสฉากจาก Pass 1.1",
           "title": "In Scene Id",
           "type": "string"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ผู้ครอบครองสิ่งของนี้ในฉาก (ถ้ามี)",
+          "title": "Owner"
+        },
+        "location": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "สถานที่ตั้งของสิ่งของนี้ในฉาก (ถ้ามี)",
+          "title": "Location"
         }
       },
       "required": [
@@ -343,6 +401,13 @@
         "$ref": "#/$defs/ItemOfInterest"
       },
       "title": "Items Of Interest",
+      "type": "array"
+    },
+    "character_states": {
+      "items": {
+        "$ref": "#/$defs/CharacterState"
+      },
+      "title": "Character States",
       "type": "array"
     },
     "dialogue_summaries": {

@@ -42,10 +42,11 @@ def build_toc(all_eps, char_count, loc_count, concept_count, has_visual):
         "6. Character Arc Table", "7. Production -- Pillar 5 (Cinematography)",
         "8. Spatial -- Pillar 6 (Locations & Routes)",
         "9. Map Generation Prompt",
+        "10. World State Ledger",
     ]
     ep_range = f"EP{all_eps[0]:03d}-EP{all_eps[-1]:03d}" if all_eps else "?"
-    sections.append(f"10. Chapter Summaries ({ep_range})")
-    sections.append("11. Entity Directory")
+    sections.append(f"11. Chapter Summaries ({ep_range})")
+    sections.append("12. Entity Directory")
     sections.append(f"   - Characters ({char_count})")
     sections.append(f"   - Locations ({loc_count})")
     sections.append(f"   - Concepts ({concept_count})")
@@ -54,6 +55,59 @@ def build_toc(all_eps, char_count, loc_count, concept_count, has_visual):
     sections.append(f"   - Storyboard ({len(all_eps)} episodes)")
     for s in sections:
         lines.append(s)
+    return "\n".join(lines)
+
+def build_world_state_ledger(all_eps, p1data):
+    lines = ["## World State Ledger", ""]
+    
+    # Character states
+    lines.append("### Character Status Timeline")
+    lines.append("")
+    lines.append("| Episode | Scene | Character | State | Description |")
+    lines.append("|:---:|:---:|:---|:---:|:---|")
+    
+    char_rows = 0
+    for ep in all_eps:
+        data = p1data.get(ep, {})
+        states = data.get("character_states", [])
+        for cs in states:
+            if not isinstance(cs, dict): continue
+            scene = cs.get("in_scene_id", "")
+            char = cs.get("character", "")
+            state = cs.get("state", "")
+            desc = cs.get("description", "")
+            lines.append(f"| EP{ep:02d} | {scene} | {char} | **{state}** | {desc} |")
+            char_rows += 1
+            
+    if char_rows == 0:
+        lines.append("| - | - | - | - | No character status updates recorded |")
+        
+    lines.append("")
+    
+    # Items/Props states
+    lines.append("### Props & Items Possession Log")
+    lines.append("")
+    lines.append("| Episode | Scene | Item | Current Owner | Location | Role / Description |")
+    lines.append("|:---:|:---:|:---|:---|:---|:---|")
+    
+    item_rows = 0
+    for ep in all_eps:
+        data = p1data.get(ep, {})
+        items = data.get("items_of_interest", [])
+        for item in items:
+            if not isinstance(item, dict): continue
+            scene = item.get("in_scene_id", "")
+            name = item.get("item", "")
+            owner = item.get("owner", "") or "n/a"
+            loc = item.get("location", "") or "n/a"
+            desc = item.get("role_in_chapter", item.get("description", ""))
+            lines.append(f"| EP{ep:02d} | {scene} | {name} | {owner} | {loc} | {desc} |")
+            item_rows += 1
+            
+    if item_rows == 0:
+        lines.append("| - | - | - | - | - | No items/props recorded |")
+        
+    lines.append("")
     return "\n".join(lines)
 
 def build_name_map_table(name_map, all_chars):
@@ -723,6 +777,7 @@ def assemble_lorebook(project_dir, prefix):
     full.append(build_production_section(p2batches))
     full.append(build_spatial_section(p2batches))
     full.append(build_map_prompt_section(PROJECT, PREFIX))
+    full.append(build_world_state_ledger(all_eps, p1data))
     summaries = ["# Chapter Summaries"]
     for ep in all_eps:
         ch_path = os.path.join(CHAPTERS, f"{PREFIX}_EP{ep:02d}_summary.md")
