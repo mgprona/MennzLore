@@ -1,9 +1,48 @@
 # Engine Reference
 
+## `fetch_raw.py`  — Phase 1
+
+```bash
+python engine/fetch_raw.py "<title>" "<author>" [base_dir]
+```
+
+ค้นหา title+author ผ่าน gutendex → ดึง raw text (PG-19 ก่อน, fallback Gutenberg) → สร้างโครงโปรเจกต์
+
+| output | เนื้อหา |
+|:-------|:--------|
+| `raw/<prefix>_full.txt` | raw text ทั้งเล่ม (ยังไม่แบ่งตอน) |
+| `verification/<prefix>_source.json` | provenance: id, title, authors, source, url, fetched_at |
+
+- `base_dir` — โฟลเดอร์ที่จะสร้าง `<prefix>/` ใต้ (default = cwd)
+- `prefix` สร้างอัตโนมัติจาก `<title-slug>-<author-last>` เช่น `voodoo-planet-norton`
+- ถ้าหนังสือมีหลาย edition ใน Gutenberg จะเลือก edition ที่มี `text/plain` ที่สมบูรณ์ที่สุดโดยอัตโนมัติ
+
+---
+
 Engine scripts ทั้งหมดเป็น **deterministic** (ไม่เรียก LLM) รับ `<project_dir> [prefix]` แบบเดียวกัน
 ถ้าไม่ระบุ `prefix` จะใช้ชื่อโฟลเดอร์ของ `project_dir`
 
 > ทุกตัว project-agnostic แล้ว — ไม่มี path hardcode ส่ง project เข้าไปได้เลย
+
+---
+
+## `split_chapters.py`  — Phase 2
+
+```bash
+python engine/split_chapters.py <project_dir> [prefix]
+```
+
+detect chapter headings ใน raw text → แบ่งตอน → เขียน `clean/<prefix>_EP###.txt`
+
+รองรับ pattern:
+- `Chapter N` / `Chapter One` / `Part II`
+- Roman numerals standalone (`I`, `II`, `III`...)
+- ต้องมี blank line ทั้งบนและล่าง heading (กัน false positive กลาง prose)
+
+| output | เนื้อหา |
+|:-------|:--------|
+| `clean/<prefix>_EP###.txt` | text ต่อตอน cleaned (blank lines collapse) |
+| `verification/<prefix>_chapters.json` | manifest: ep_id, heading, line_start, char_count |
 
 ---
 

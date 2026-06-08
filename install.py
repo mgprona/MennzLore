@@ -99,7 +99,7 @@ def main():
     print("\n--------------------------------------------------")
     print("Installation Complete!")
     print("1. Please RESTART your Claude Desktop application.")
-    print("2. You will see a plug icon (🔌) indicating the server is running.")
+    print("2. You will see a plug icon indicating the server is running.")
     print("--------------------------------------------------")
 
 if __name__ == "__main__":
