@@ -1,5 +1,5 @@
 // State Variables
-let currentProject = 'time-machine-project';
+let currentProject = 'chula-project';
 let episodes = [];
 let currentEpisodeIndex = 0;
 let isPlaying = false;

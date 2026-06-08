@@ -96,7 +96,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return {"error": f"Project folder not found: {project_name}"}
 
         # Resolve prefix
-        prefix = "voodoo-planet-qa" if project_name == "oldlore" else "tm" if "time-machine" in project_name else "pan" if "pan" in project_name else "dyfed" if "dyfed" in project_name else project_name
+        prefix = "voodoo-planet-qa" if project_name == "oldlore" else "tm" if "time-machine" in project_name else "pan" if "pan" in project_name else "dyfed" if "dyfed" in project_name else "chula" if "chula" in project_name else project_name
         
         # Look for micro_facts files
         mf_dir = os.path.join(proj_dir, "micro_facts")
@@ -163,7 +163,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
     def get_episode_data(self, project_name, ep_id):
         proj_dir = os.path.join(SCRATCH_DIR, project_name)
-        prefix = "voodoo-planet-qa" if project_name == "oldlore" else "tm" if "time-machine" in project_name else "pan" if "pan" in project_name else "dyfed" if "dyfed" in project_name else project_name
+        prefix = "voodoo-planet-qa" if project_name == "oldlore" else "tm" if "time-machine" in project_name else "pan" if "pan" in project_name else "dyfed" if "dyfed" in project_name else "chula" if "chula" in project_name else project_name
         
         # Look for micro_facts files
         mf_dir = os.path.join(proj_dir, "micro_facts")
