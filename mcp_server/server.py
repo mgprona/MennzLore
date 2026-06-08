@@ -238,6 +238,89 @@ def run_youtube_acquisition(playlist_url: str, project_dir: str, prefix: str, ap
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+@mcp.tool()
+def run_gutenberg_acquire(book_id: str, prefix: str, raw_dir: str, url_override: str = None) -> dict:
+    """
+    Phase 1: Download a Project Gutenberg ebook by ID, clean its headers/footers,
+    and split it into sequential chapter files (EP001.txt, EP002.txt etc.).
+    
+    Args:
+        book_id: The Project Gutenberg Book ID (e.g. '62' for A Princess of Mars).
+        prefix: Project prefix to use.
+        raw_dir: Absolute path to the destination directory to save raw chapter text files.
+        url_override: Optional direct URL download override.
+    """
+    from engine.gutenberg_acquire import download_and_split
+    try:
+        result = download_and_split(book_id, prefix, raw_dir, url_override)
+        return {"status": "success", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+def run_saga_assembly(saga_dir: str) -> dict:
+    """
+    Saga Mode: Run Saga timeline creation, compile the Master Saga Lorebook,
+    and perform the cross-volume consistency audit.
+    
+    Args:
+        saga_dir: The absolute path to the saga directory containing saga_config.json.
+    """
+    from engine.saga_assembler import build_saga_master_lorebook, generate_cross_volume_consistency_report
+    from engine.saga_config import load_saga_config
+    try:
+        config = load_saga_config(saga_dir)
+        lorebook_path = build_saga_master_lorebook(saga_dir)
+        report_path = generate_cross_volume_consistency_report(saga_dir)
+        return {
+            "status": "success",
+            "saga_title": config.saga_title,
+            "master_lorebook": lorebook_path,
+            "consistency_report": report_path
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+def query_saga_rag(saga_dir: str, query: str, limit: int = 5) -> dict:
+    """
+    Saga Mode: Search across all volumes in a saga using local vector memory (Local RAG).
+    
+    Args:
+        saga_dir: The absolute path to the saga directory containing saga_config.json.
+        query: Search term or character/location history query.
+        limit: Maximum number of historical facts to return.
+    """
+    from engine.saga_config import load_saga_config
+    from engine.saga_rag_memory import SagaVectorMemory
+    try:
+        config = load_saga_config(saga_dir)
+        mem = SagaVectorMemory()
+        volumes_list = []
+        for vol in config.volumes:
+            volumes_list.append({
+                "volume_id": vol.volume_id,
+                "title": vol.title,
+                "prefix": vol.prefix,
+                "project_dir": vol.project_dir
+            })
+        mem.load_saga_facts(saga_dir, volumes_list)
+        results = mem.query_cross_volume(query, limit=limit)
+        serializable_results = []
+        for doc in results:
+            serializable_results.append({
+                "text": doc["text"],
+                "score": doc.get("score", 0.0),
+                "metadata": doc["metadata"]
+            })
+        return {
+            "status": "success",
+            "query": query,
+            "results": serializable_results
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 
 # ─── RESOURCES ──────────────────────────────────────────────────────────────
 
