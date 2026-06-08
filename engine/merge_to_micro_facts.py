@@ -2,15 +2,20 @@
 """
 Pass 1.4: Merge & Validate (Pydantic V2)
 =========================================
-Reads 3 JSON files from Pass 1.1-1.3, validates with Pydantic + @model_validator,
-computes counters programmatically (not from LLM), writes micro_facts.json.
-
-Usage:
-    python merge_to_micro_facts.py <prefix> <ep_num> [base_dir]
-    python merge_to_micro_facts.py jurgen EP010 ~/projects/jurgen
+Reads 3 JSON files (architect, profiler, chronicler) representing 3 analysis passes
+of a single chapter, merges them, validates them against Pydantic models, and writes 
+the final micro_facts JSON.
 """
-import json, sys, os
+import os
+import sys
+import json
+
 from lore_models import MicroFactsFinal
+
+try:
+    from engine.utils import load_json, write_json
+except ImportError:
+    from utils import load_json, write_json
 
 
 def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None):
@@ -43,7 +48,9 @@ def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None):
             print(f"  [ERROR] {e}")
         sys.exit(1)
 
-    arch, prof, chron = loaded["architect"], loaded["profiler"], loaded["chronicler"]
+    arch = loaded["architect"]
+    prof = loaded["profiler"]
+    chron = loaded["chronicler"]
 
     merged = {
         "chapter_id": arch.get("chapter_id", ep_num),
@@ -67,6 +74,7 @@ def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None):
 
     os.makedirs(micro_dir, exist_ok=True)
     out_path = os.path.join(micro_dir, f"{prefix}_{ep_num}_micro_facts.json")
+    
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(final_model.model_dump_json(indent=2, ensure_ascii=False))
 
@@ -74,6 +82,7 @@ def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None):
     print(f"      Events: {final_model.total_events_count} | Scenes: {final_model.total_scenes_count} | Dialogues: {final_model.total_dialogues_count}")
     print(f"      Chars: {len(final_model.characters_present)} | Behaviors: {len(final_model.character_behaviors)}")
     print(f"      Items: {len(final_model.items_of_interest)} | Connections: {len(final_model.cross_chapter_connections)} | Lore: {len(final_model.lore_discoveries)}")
+    
     return final_model
 
 

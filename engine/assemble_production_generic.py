@@ -2,33 +2,21 @@
 """
 Phase 9 — Production Render (GENERIC v1.0)
 ===========================================
-Generic fork of great-god-pan-v2/assemble_production.py.
-Removes hardcoded "Victorian Gothic / Arthur Machen" assumptions.
-
-Adaptations vs. the original:
-  - micro_facts at top-level `micro_facts/` (fallback to `analysis/micro_facts/`)
-  - name_map nested under "name_map" key, flat dict keyed by entity name
-    (entries carry: type, aliases, episodes, lore_type) — filter type=="character"
-  - title/author/genre pulled from global_lore.book_metadata
-  - ART STYLE inferred from genre instead of hardcoded Victorian Gothic
-  - character visual anchors parsed from entities/<prefix>_visual_style.md
-    (Appearance | Clothing | Props), which the original lacked
-
-Outputs (output/production/):
-  - cinematography_shot_list.json
-  - scene_image_prompts.json
-  - entity_registry.json
-  - visual_style_bible.json
-  - production_manifest.json
-
-Usage:
-    python scripts/assemble_production_generic.py <project_dir> <prefix>
+Generates cinematography shot lists, scene image prompts, entity registries, 
+and visual style bibles for creative production.
 """
-
-import json, os, glob, re, sys
+import json
+import os
+import glob
+import re
+import sys
 from datetime import datetime
 from collections import defaultdict
 
+try:
+    from engine.utils import build_variant_lookup, normalize_name, load_json, write_json
+except ImportError:
+    from utils import build_variant_lookup, normalize_name, load_json, write_json
 
 # ─── CONFIG ──────────────────────────────────────────
 ASPECT_RATIOS = {"wide": "16:9", "portrait": "9:16", "square": "1:1", "cinematic": "21:9"}
@@ -116,7 +104,7 @@ MOOD_TO_SHOT = {
 }
 
 
-# ─── STYLE INFERENCE (genre-driven, replaces hardcoded Victorian Gothic) ───
+# ─── STYLE INFERENCE ──────────────────────────────────
 def infer_art_style(genre_list, title):
     """Infer an art-direction style string from the work's genre."""
     g = " ".join(genre_list).lower() if genre_list else ""
@@ -137,7 +125,7 @@ def infer_art_style(genre_list, title):
 
 
 def infer_era_setting(metadata):
-    """Build a generic visual-anchor era/setting note from metadata."""
+    """Build a generic era/setting note from metadata."""
     genre = " ".join(metadata.get("genre", [])).lower()
     series = metadata.get("series_context", "")
     if any(w in genre for w in ["science fiction", "space", "planetary", "galactic"]):
@@ -152,32 +140,12 @@ def infer_era_setting(metadata):
             "style_note": ", ".join(metadata.get("genre", [])[:3])}
 
 
-# ─── NAME MAP HELPERS (flat dict keyed by entity name) ───
+# ─── NAME MAP HELPERS ─────────────────────────────────
 def get_name_map_root(raw):
     """Voodoo nests entities under 'name_map'; original used top-level 'characters'."""
     if isinstance(raw.get("name_map"), dict):
         return raw["name_map"]
     return raw
-
-
-def build_variant_lookup(nm_root):
-    """canonical lower-key -> canonical name, for character-type entries."""
-    lookup = {}
-    for canonical, data in nm_root.items():
-        if not isinstance(data, dict):
-            continue
-        # original style: characters sub-dict with en/standard/aliases
-        if data.get("type") not in (None, "character") and "aliases" not in data and "en" not in data:
-            continue
-        keys = [canonical, data.get("en", ""), data.get("standard", "")]
-        keys += data.get("aliases", [])
-        for k in keys:
-            if not isinstance(k, str):
-                continue
-            k = k.strip().lower()
-            if k and k not in lookup:
-                lookup[k] = canonical
-    return lookup
 
 
 def character_names(nm_root):
@@ -197,17 +165,7 @@ def aliases_for(nm_root, canonical):
     return [canonical]
 
 
-def normalize_name(raw_name, variant_lookup):
-    key = raw_name.strip().lower()
-    if key in variant_lookup:
-        return variant_lookup[key]
-    cleaned = re.sub(r'\s*\(.*?\)\s*', '', raw_name).strip()
-    if cleaned.lower() in variant_lookup:
-        return variant_lookup[cleaned.lower()]
-    return raw_name
-
-
-# ─── VISUAL STYLE PARSING (from entities/<prefix>_visual_style.md) ───
+# ─── VISUAL STYLE PARSING ─────────────────────────────
 def parse_visual_style_md(path):
     """Parse '## Name' blocks with '* **EPxx**: Appearance: .. | Clothing: .. | Props: ..'."""
     visual = {}
@@ -222,10 +180,8 @@ def parse_visual_style_md(path):
                 current = mh.group(1).strip()
                 continue
             if current and line.lstrip().startswith("*"):
-                # take the descriptive part after 'EPxx**:'
                 m = re.search(r'\*\*EP\d+\*\*:\s*(.+)$', line)
                 desc = m.group(1).strip() if m else line.lstrip("* ").strip()
-                # keep the longest (most detailed) entry per character
                 if current not in visual or len(desc) > len(visual[current]):
                     visual[current] = desc
     return visual
@@ -294,7 +250,7 @@ def build_image_prompt(title, location, visual_details, mood, characters, char_v
 
 # ─── MAIN ────────────────────────────────────────────
 def build_production(project_dir, prefix):
-    print(f"\n{'='*60}\nPHASE 9 — PRODUCTION RENDER (GENERIC v1.0)\n{'='*60}")
+    print(f"\n{'='*60}\nPHASE 9 - PRODUCTION RENDER (GENERIC v1.0)\n{'='*60}")
     print(f"Project: {prefix}\nDir:     {project_dir}")
 
     mf_dir = os.path.join(project_dir, "micro_facts")
@@ -326,7 +282,7 @@ def build_production(project_dir, prefix):
         with open(nm_path, encoding="utf-8") as f:
             name_map_raw = json.load(f)
     nm_root = get_name_map_root(name_map_raw)
-    variant_lookup = build_variant_lookup(nm_root)
+    variant_lookup = build_variant_lookup(name_map_raw)
     char_name_set = character_names(nm_root)
 
     # character visuals from visual_style.md
@@ -345,7 +301,7 @@ def build_production(project_dir, prefix):
     print(f"Loaded: {len(eps_ordered)} episodes")
 
     # 1. SCENE INVENTORY & PROMPTS
-    print("\n── Scene Inventory & Prompts ──")
+    print("\n--- Scene Inventory & Prompts ---")
     scenes, prompts = [], []
     for ep in eps_ordered:
         data = all_eps[ep]
@@ -412,7 +368,7 @@ def build_production(project_dir, prefix):
     print(f"  scene_image_prompts.json ({len(prompts)} prompts)")
 
     # 2. ENTITY REGISTRY
-    print("\n── Entity Registry ──")
+    print("\n--- Entity Registry ---")
     char_profiles = defaultdict(lambda: {"episodes": [], "behaviors": []})
     for ep in eps_ordered:
         for b in all_eps[ep].get("character_behaviors", []):
@@ -426,7 +382,6 @@ def build_production(project_dir, prefix):
     character_registry = {}
     next_id = 0
     for char_name in sorted(char_profiles.keys()):
-        # only keep entities that are characters per name_map (when known)
         if char_name_set and char_name not in char_name_set and char_name not in char_visuals:
             continue
         cid = f"CHAR_{next_id:03d}"
@@ -443,7 +398,6 @@ def build_production(project_dir, prefix):
             "visual_anchor": era_setting,
         }
 
-    # location registry from locations.md  (format: '* **Name** (EPxx): mood')
     location_registry = {}
     loc_path = os.path.join(entities_dir, f"{prefix}_locations.md")
     if os.path.exists(loc_path):
@@ -466,7 +420,7 @@ def build_production(project_dir, prefix):
     print(f"  entity_registry.json ({len(character_registry)} chars, {len(location_registry)} locs)")
 
     # 3. VISUAL STYLE BIBLE
-    print("\n── Visual Style Bible ──")
+    print("\n--- Visual Style Bible ---")
     style_bible = {}
     for char_name in sorted(char_profiles.keys()):
         if char_name not in character_registry_names(character_registry):
@@ -490,7 +444,7 @@ def build_production(project_dir, prefix):
     print(f"  visual_style_bible.json ({len(style_bible)} characters)")
 
     # 4. PRODUCTION MANIFEST
-    print("\n── Production Manifest ──")
+    print("\n--- Production Manifest ---")
     ep_breakdown = []
     for ep in eps_ordered:
         ep_scenes = [s for s in scenes if s["episode"] == ep]

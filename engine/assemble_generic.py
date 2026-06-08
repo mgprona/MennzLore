@@ -8,42 +8,10 @@ import os, sys, json, re
 from datetime import datetime
 from collections import defaultdict
 
-def build_variant_lookup(name_map):
-    lookup = {}
-    for canonical, data in name_map.get("characters", {}).items():
-        keys = [canonical, data.get("thai", ""), data.get("en", ""), data.get("standard", "")]
-        keys += data.get("aliases", [])
-        keys += data.get("asr_variants", [])
-        for k in keys:
-            k = k.strip().lower()
-            if k and k not in lookup:
-                lookup[k] = canonical
-    return lookup
-
-def normalize_name(raw_name, variant_lookup):
-    key = raw_name.strip().lower()
-    if key in variant_lookup:
-        return variant_lookup[key]
-    cleaned = re.sub(r'\s*\(.*?\)\s*', '', raw_name).strip()
-    if cleaned.lower() in variant_lookup:
-        return variant_lookup[cleaned.lower()]
-    if " / " in raw_name:
-        first = raw_name.split(" / ")[0].strip().lower()
-        if first in variant_lookup:
-            return variant_lookup[first]
-    if " — " in raw_name:
-        base = raw_name.split(" — ")[0].strip().lower()
-        if base in variant_lookup:
-            return variant_lookup[base]
-    return raw_name
-
-def normalize_location(raw_loc):
-    loc = raw_loc.split("(")[0].strip()
-    loc = loc.split(" — ")[0].strip() if " — " in loc else loc
-    # Strip trailing descriptive clause after em-dash
-    loc = re.sub(r'\s+— .*$', '', loc)
-    loc = loc.strip()
-    return loc
+try:
+    from engine.utils import build_variant_lookup, normalize_name, normalize_location, load_json
+except ImportError:
+    from utils import build_variant_lookup, normalize_name, normalize_location, load_json
 
 def build_metadata_block(prefix, global_lore, all_eps, total_chars=0):
     meta = global_lore.get("book_metadata", {}) if global_lore else {}
@@ -271,12 +239,9 @@ def build_spatial_section(p2batches):
     lines.append("")
     return "\n".join(lines)
 
-def main():
-    if len(sys.argv) < 3:
-        print("Usage: python assemble_generic.py <project_dir> <prefix>")
-        sys.exit(1)
-    PROJECT = sys.argv[1].rstrip("/\\")
-    PREFIX = sys.argv[2]
+def assemble_lorebook(project_dir, prefix):
+    PROJECT = project_dir.rstrip("/\\")
+    PREFIX = prefix
     MF_DIR = os.path.join(PROJECT, "micro_facts")
     if not os.path.isdir(MF_DIR):
         MF_DIR = os.path.join(PROJECT, "analysis", "micro_facts")
@@ -770,6 +735,13 @@ def main():
     print(f"{'='*60}")
     print(f"Output: chapters/, entities/, output/")
     print(f"Full lorebook: {fp_full} ({len(full_text):,} chars)")
+    return fp_full
+
+def main():
+    if len(sys.argv) < 3:
+        print("Usage: python assemble_generic.py <project_dir> <prefix>")
+        sys.exit(1)
+    assemble_lorebook(sys.argv[1], sys.argv[2])
 
 if __name__ == "__main__":
     main()

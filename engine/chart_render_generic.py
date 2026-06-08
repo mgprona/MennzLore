@@ -2,26 +2,22 @@
 """
 Phase 10 — Chart Render (GENERIC v1.0)
 =======================================
-Generic fork of great-god-pan-v2/chart_render.py.
-
-Adaptations vs. the original:
-  - micro_facts at top-level `micro_facts/` (fallback to `analysis/micro_facts/`)
-  - title/author pulled from global_lore.book_metadata (name_map._meta is empty here)
-  - Earth/UK KNOWN_COORDS removed — fictional/alien worlds resolve as fantasy
-    canvas placement by terrain zone. A real-coords gazetteer can still be
-    supplied via <prefix>_gazetteer.json for Earth-set stories.
-  - route method heuristic generalized (no UK-longitude assumption)
-
-Outputs (output/spatial/):
-  - location_geography.json
-  - route_network.json
-  - chart_map_skeleton.svg
-
-Usage:
-    python scripts/chart_render_generic.py <project_dir> [prefix]
+Processes spatial location data, determines geography, calculates character 
+travel routes, and renders the fictional/real-world map skeleton as an SVG.
 """
-import json, os, glob, re, sys, math, random
+import json
+import os
+import glob
+import re
+import sys
+import math
+import random
 from xml.sax.saxutils import escape as xml_escape
+
+try:
+    from engine.utils import normalize_location, load_json, write_json
+except ImportError:
+    from utils import normalize_location, load_json, write_json
 
 # Optional real-world gazetteer (loaded from <prefix>_gazetteer.json if present).
 # For fictional/alien settings this stays empty → everything is fantasy-placed.
@@ -41,7 +37,7 @@ FANTASY_ZONES = {
 
 def resolve_location(name):
     n = re.sub(r'^the\s+', '', name.strip().lower())
-    n = n.split("(")[0].strip()
+    n = normalize_location(n)
     n = re.sub(r'\s*[--/].*$', '', n).strip()
     n = re.sub(r'\s+(?:house|street|road|square|avenue|lane|rooms|apartment)\s*$', '', n).strip()
     if n in KNOWN_COORDS:
@@ -53,11 +49,13 @@ def resolve_location(name):
 
 def haversine_km(lat1, lon1, lat2, lon2):
     R = 6371.0
-    dlat = math.radians(lat2 - lat1); dlon = math.radians(lon2 - lon1)
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
     a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
 
-def to_nm(km): return km / 1.852
+def to_nm(km): 
+    return km / 1.852
 
 def latlon_to_xy(lat, lon, clat, clon, scale, W, H):
     cos_cl = math.cos(math.radians(clat))
@@ -68,24 +66,38 @@ def on_canvas(x, y, W, H, margin=60):
 
 def terrain_from_name(name):
     n = name.lower()
-    if any(w in n for w in ["mountain","peak","hill","mount","slope","ledge","cliff","spire","rock"]): return "mountain_peak"
-    if any(w in n for w in ["river","stream","water","lake","falls","crater lake"]): return "river_cliff"
-    if any(w in n for w in ["forest","wood","grove","tree","jungle"]): return "forest"
-    if any(w in n for w in ["sea","coast","ocean","bay","island","shore","beach","reed","mud flat"]): return "coastal"
-    if any(w in n for w in ["town","village","city","keep","castle","hall","temple","house","street","road","square","lane","palace","fortress","camp","spaceport","cabin","armory","terrace","parapet"]): return "settlement"
-    if any(w in n for w in ["valley","field","plain","meadow"]): return "farmland_valley"
-    if any(w in n for w in ["marsh","swamp","bog","fen","bogland"]): return "marsh_hills"
-    if any(w in n for w in ["cave","cavern","mine"]): return "underground"
+    if any(w in n for w in ["mountain","peak","hill","mount","slope","ledge","cliff","spire","rock"]): 
+        return "mountain_peak"
+    if any(w in n for w in ["river","stream","water","lake","falls","crater lake"]): 
+        return "river_cliff"
+    if any(w in n for w in ["forest","wood","grove","tree","jungle"]): 
+        return "forest"
+    if any(w in n for w in ["sea","coast","ocean","bay","island","shore","beach","reed","mud flat"]): 
+        return "coastal"
+    if any(w in n for w in ["town","village","city","keep","castle","hall","temple","house","street","road","square","lane","palace","fortress","camp","spaceport","cabin","armory","terrace","parapet"]): 
+        return "settlement"
+    if any(w in n for w in ["valley","field","plain","meadow"]): 
+        return "farmland_valley"
+    if any(w in n for w in ["marsh","swamp","bog","fen","bogland"]): 
+        return "marsh_hills"
+    if any(w in n for w in ["cave","cavern","mine"]): 
+        return "underground"
     return "default"
 
 def generate_svg(meta, locations, routes):
     W, H = 1000, 700
-    clat, clon = meta["center"]; scale = meta["scale"]
-    novel = meta.get("novel", "Unknown"); author = meta.get("author", "Unknown")
+    clat, clon = meta["center"]
+    scale = meta["scale"]
+    novel = meta.get("novel", "Unknown")
+    author = meta.get("author", "Unknown")
     coord_ratio = meta.get("coord_ratio", 0.0)
-    n_real = meta.get("n_real", 0); n_total = meta.get("n_total", 0)
+    n_real = meta.get("n_real", 0)
+    n_total = meta.get("n_total", 0)
     svg = []
-    def a(s): svg.append(s)
+    
+    def a(s): 
+        svg.append(s)
+        
     a('<?xml version="1.0" encoding="UTF-8"?>')
     a('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700" width="100%" height="100%">')
     a('  <metadata>')
@@ -140,13 +152,19 @@ def generate_svg(meta, locations, routes):
     a('    <g id="locations">')
     placed = {}
     for name, loc in sorted(locations.items()):
-        coords = loc.get("coordinates"); canvas_pos = loc.get("canvas_pos")
-        if canvas_pos: x, y = canvas_pos
-        elif coords: x, y = latlon_to_xy(coords[0], coords[1], clat, clon, scale, W, H)
-        else: continue
-        if not on_canvas(x, y, W, H): continue
+        coords = loc.get("coordinates")
+        canvas_pos = loc.get("canvas_pos")
+        if canvas_pos: 
+            x, y = canvas_pos
+        elif coords: 
+            x, y = latlon_to_xy(coords[0], coords[1], clat, clon, scale, W, H)
+        else: 
+            continue
+        if not on_canvas(x, y, W, H): 
+            continue
         placed[name] = (x, y)
-        lid = loc.get("id", "?"); terrain = loc.get("terrain", "?")
+        lid = loc.get("id", "?")
+        terrain = loc.get("terrain", "?")
         a('      <g id="' + lid + '" data-name="' + xml_escape(name) + '" data-terrain="' + terrain + '">')
         a('        <circle cx="' + str(x) + '" cy="' + str(y) + '" r="5" fill="#5a4a3a" stroke="#1a1a2a" stroke-width="1"/>')
         a('        <text class="loc-name" x="' + str(x) + '" y="' + str(y-12) + '">' + xml_escape(name[:24]) + '</text>')
@@ -157,11 +175,14 @@ def generate_svg(meta, locations, routes):
     drawn = set()
     for r in routes[:20]:
         frm, to = r["from"], r["to"]
-        if frm not in placed or to not in placed: continue
+        if frm not in placed or to not in placed: 
+            continue
         key = tuple(sorted([frm, to]))
-        if key in drawn: continue
+        if key in drawn: 
+            continue
         drawn.add(key)
-        x1, y1 = placed[frm]; x2, y2 = placed[to]
+        x1, y1 = placed[frm]
+        x2, y2 = placed[to]
         mx, my = (x1+x2)//2, (y1+y2)//2
         a('      <g data-from="' + xml_escape(frm) + '" data-to="' + xml_escape(to) + '" data-distance-nm="' + str(r["distance_nm"]) + '">')
         a('        <line class="route" x1="' + str(x1) + '" y1="' + str(y1) + '" x2="' + str(x2) + '" y2="' + str(y2) + '"/>')
@@ -198,7 +219,6 @@ def generate_svg(meta, locations, routes):
     a('        <tspan x="700" dy="12">Feed to vision AI for styling</tspan>')
     a('      </text>')
     a('    </g>')
-    a('    <!-- AI ENHANCEMENT: >70% real coords -> nautical chart. <30% -> fantasy/alien parchment. -->')
     a('</svg>')
     return "\n".join(svg)
 
@@ -208,7 +228,7 @@ def build_chart(project_dir, prefix):
     os.makedirs(output_dir, exist_ok=True)
     verification = os.path.join(project_dir, "verification")
 
-    # title/author from global_lore (name_map._meta is empty in this layout)
+    # title/author from global_lore
     novel_name = prefix.replace("-", " ").title()
     author = "Unknown"
     gl_path = os.path.join(verification, f"{prefix}_global_lore.json")
@@ -239,7 +259,7 @@ def build_chart(project_dir, prefix):
             if isinstance(s, dict):
                 raw = s.get("location", "")
                 if raw:
-                    norm = raw.split("(")[0].strip()
+                    norm = normalize_location(raw)
                     if len(norm) > 1 and norm not in locations:
                         locations[norm] = {"id": f"loc_{loc_id:03d}", "episodes": []}
                         loc_id += 1
@@ -273,14 +293,16 @@ def build_chart(project_dir, prefix):
 
     placed_f = {}
     for name, loc in sorted(geo_data.items()):
-        if loc.get("coordinates"): continue
+        if loc.get("coordinates"): 
+            continue
         t = loc.get("terrain", "default")
         zone = FANTASY_ZONES.get(t, FANTASY_ZONES["default"])
         for _ in range(100):
             x = random.randint(int(zone["x"][0]*1000), int(zone["x"][1]*1000))
             y = random.randint(int(zone["y"][0]*700), int(zone["y"][1]*700))
             if all(math.sqrt((x-px)**2 + (y-py)**2) >= 65 for px, py in placed_f.values()):
-                placed_f[name] = (x, y); break
+                placed_f[name] = (x, y)
+                break
         if name not in placed_f:
             placed_f[name] = (random.randint(80, 920), random.randint(80, 620))
         geo_data[name]["canvas_pos"] = list(placed_f[name])
@@ -293,7 +315,8 @@ def build_chart(project_dir, prefix):
     prev_locs = []
     for ep in eps_ordered:
         cands = glob.glob(os.path.join(mf_dir, f"{prefix}_EP{ep}_micro_facts.json"))
-        if not cands: continue
+        if not cands: 
+            continue
         with open(cands[0], encoding="utf-8") as fh:
             data = json.load(fh)
         current = []
@@ -301,21 +324,22 @@ def build_chart(project_dir, prefix):
             if isinstance(s, dict):
                 raw = s.get("location", "")
                 if raw:
-                    norm = raw.split("(")[0].strip()
+                    norm = normalize_location(raw)
                     if norm in geo_data:
                         current.append(norm)
         if prev_locs and current:
             for pl in prev_locs:
                 for cl in current:
                     if pl != cl and pl in geo_data and cl in geo_data:
-                        ca = geo_data[pl].get("coordinates"); cb = geo_data[cl].get("coordinates")
+                        ca = geo_data[pl].get("coordinates")
+                        cb = geo_data[cl].get("coordinates")
                         if ca and cb:
                             km = haversine_km(ca[0], ca[1], cb[0], cb[1])
                             d_nm = round(to_nm(km), 1)
                             method = "walk" if d_nm < 10 else "travel"
                         else:
-                            # fantasy: distance from canvas separation, generic method
-                            pa = geo_data[pl].get("canvas_pos"); pb = geo_data[cl].get("canvas_pos")
+                            pa = geo_data[pl].get("canvas_pos")
+                            pb = geo_data[cl].get("canvas_pos")
                             if pa and pb:
                                 px = math.sqrt((pa[0]-pb[0])**2 + (pa[1]-pb[1])**2)
                                 d_nm = round(px / 10, 1)
@@ -332,9 +356,9 @@ def build_chart(project_dir, prefix):
         min_lat, max_lat = min(lats)-0.5, max(lats)+0.5
         min_lon, max_lon = min(lons)-0.5, max(lons)+0.5
     else:
-        # purely fictional: nominal frame, real coords aren't drawn anyway
         min_lat, max_lat, min_lon, max_lon = 0.0, 10.0, 0.0, 10.0
-    clat = (min_lat + max_lat) / 2; clon = (min_lon + max_lon) / 2
+    clat = (min_lat + max_lat) / 2
+    clon = (min_lon + max_lon) / 2
     vis_range = max_lat - min_lat
     scale = (700 - 160) / (vis_range * math.pi / 180) if vis_range > 0 else 700
 
