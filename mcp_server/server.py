@@ -24,6 +24,7 @@ from engine.chart_render_generic import build_chart
 from engine.verify_names import verify_names
 from engine.rag_memory import query_past_lore
 from engine.image_generator import generate_storyboard
+from engine.youtube_acquire import analyze_playlist_transcripts, run_playlist_acquisition
 import subprocess
 import socket
 
@@ -185,6 +186,38 @@ def generate_storyboard_tool(project_dir: str, prefix: str, approved_scenes: lis
             return f"[ERROR] Generation failed: {res.get('message', 'Unknown error')}"
     except Exception as e:
         return f"[ERROR] Storyboard generation threw exception: {e}"
+
+@mcp.tool()
+def analyze_youtube_playlist(playlist_url: str) -> dict:
+    """
+    Scan a YouTube playlist or video URL and check subtitle availability
+    (manual, auto-generated, or missing).
+    
+    Args:
+        playlist_url: The YouTube playlist or single video URL.
+    """
+    try:
+        return analyze_playlist_transcripts(playlist_url)
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+def run_youtube_acquisition(playlist_url: str, project_dir: str, prefix: str, approved: bool = False, model_id: str = "openai/whisper-large-v3-turbo") -> dict:
+    """
+    Run full YouTube transcript/STT acquisition.
+    Pulls free transcripts or uses Whisper STT via OpenRouter for missing subtitles (if approved).
+    
+    Args:
+        playlist_url: The YouTube playlist or single video URL.
+        project_dir: The project directory path where files will be saved.
+        prefix: Project prefix (e.g. 'dyfed').
+        approved: Set to True if the user has approved the cost of doing Whisper STT.
+        model_id: The OpenRouter model ID to use for audio transcription.
+    """
+    try:
+        return run_playlist_acquisition(playlist_url, project_dir, prefix, approved=approved, model_id=model_id)
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 # ─── RESOURCES ──────────────────────────────────────────────────────────────
