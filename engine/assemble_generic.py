@@ -802,11 +802,53 @@ def assemble_lorebook(project_dir, prefix):
                 c = f.read()
             c = re.sub(r'^# .*?\n+', '', c)
             full.append(f"# {label}\n{c}")
-    full_text = "\n\n---\n\n".join(full)
+            
+    # Check if translation state exists (TET Pipeline)
+    translation_state_path = os.path.join(PROJECT, f"{PREFIX}_translation_state.json")
+    if os.path.exists(translation_state_path):
+        api_key = os.environ.get("OPENROUTER_API_KEY")
+        if api_key:
+            print(f"\n[TET Pipeline] Translation state detected. Translating master lorebook sections to Thai...")
+            try:
+                # Add engine to path just in case
+                sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+                from translate_raw import translate_english_to_thai
+                
+                # Write English version first
+                english_text = "\n\n---\n\n".join(full)
+                fp_en = os.path.join(OUTPUT, f"{PREFIX}_master_lorebook_en.md")
+                with open(fp_en, "w", encoding="utf-8") as f:
+                    f.write(english_text)
+                print(f"  [TET] Saved English master lorebook reference to: {fp_en}")
+                
+                # Translate each section
+                thai_full = []
+                for idx, section in enumerate(full):
+                    if idx == 0:
+                        # Keep metadata block unchanged
+                        thai_full.append(section)
+                        continue
+                    
+                    print(f"  Translating section {idx+1}/{len(full)} to Thai...")
+                    # Translate using high-quality model (Gemini 2.5 Pro)
+                    thai_section = translate_english_to_thai(api_key, section)
+                    thai_full.append(thai_section)
+                
+                full_text = "\n\n---\n\n".join(thai_full)
+            except Exception as e:
+                print(f"  [WARNING] TET translation back to Thai failed: {e}. Falling back to English version.")
+                full_text = "\n\n---\n\n".join(full)
+        else:
+            print("  [WARNING] OPENROUTER_API_KEY not set. Cannot translate back to Thai. Using English.")
+            full_text = "\n\n---\n\n".join(full)
+    else:
+        full_text = "\n\n---\n\n".join(full)
+        
     fp_full = os.path.join(OUTPUT, f"{PREFIX}_master_lorebook_full.md")
     with open(fp_full, "w", encoding="utf-8") as f:
         f.write(full_text)
     print(f"  Full lorebook: {len(full_text):,} chars")
+
     
     print(f"\n{'='*60}")
     print(f"ASSEMBLY COMPLETE")
