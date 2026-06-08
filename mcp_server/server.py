@@ -239,21 +239,21 @@ def run_youtube_acquisition(playlist_url: str, project_dir: str, prefix: str, ap
         return {"status": "error", "message": str(e)}
 
 @mcp.tool()
-def run_gutenberg_acquire(book_id: str, prefix: str, raw_dir: str, url_override: str = None) -> dict:
+def acquire_by_id(book_id: int, base_dir: str = ".") -> dict:
     """
-    Phase 1: Download a Project Gutenberg ebook by ID, clean its headers/footers,
-    and split it into sequential chapter files (EP001.txt, EP002.txt etc.).
-    
+    Phase 1 (by Gutenberg ID): Download a public-domain book by its Gutenberg ID,
+    scaffold the project directory, and write provenance. Uses the same download
+    and `<prefix>_full.txt` naming path as acquire_by_title, so the downstream
+    pipeline works identically. Use split_into_chapters (Phase 2) afterwards.
+
     Args:
-        book_id: The Project Gutenberg Book ID (e.g. '62' for A Princess of Mars).
-        prefix: Project prefix to use.
-        raw_dir: Absolute path to the destination directory to save raw chapter text files.
-        url_override: Optional direct URL download override.
+        book_id: The Project Gutenberg book ID (e.g. 62 for A Princess of Mars).
+        base_dir: Directory under which the `<prefix>/` project folder is created (default: cwd).
     """
-    from engine.gutenberg_acquire import download_and_split
+    from engine.fetch_raw import fetch_raw_by_id
     try:
-        result = download_and_split(book_id, prefix, raw_dir, url_override)
-        return {"status": "success", "result": result}
+        provenance = fetch_raw_by_id(int(book_id), base_dir)
+        return {"status": "success", "result": provenance}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

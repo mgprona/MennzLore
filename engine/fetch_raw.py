@@ -167,45 +167,19 @@ def scaffold_project(base_dir: str, prefix: str) -> str:
 
 # ── main ─────────────────────────────────────────────────────────────────────
 
-def fetch_raw(title: str, author: str, base_dir: str = ".") -> dict:
-    print(f"\nPhase 1 — Fetch Raw")
-    print(f"  Searching: '{title}' by '{author}'")
-
-    # 1. search
-    candidates = search_gutendex(title, author)
-    book = pick_best(candidates, title, author)
-
-    book_id   = book["id"]
-    book_title = book["title"]
-    authors   = [p.get("name", "") for p in book.get("authors", [])]
-    author_last = authors[0].split(",")[0].strip() if authors else _slug(author).split("-")[0]
-
-    print(f"  Found: [{book_id}] {book_title}  |  {', '.join(authors)}")
-
-    # 2. prefix + project scaffold
+def _finalize(book_id, book_title, authors, raw_bytes, source, source_url, base_dir) -> dict:
+    """Shared tail: scaffold project, write raw + provenance, update pipeline state."""
+    author_last = authors[0].split(",")[0].strip() if authors else "unknown"
     prefix = make_prefix(book_title, author_last)
     project_dir = scaffold_project(base_dir, prefix)
     print(f"  Prefix:  {prefix}")
     print(f"  Project: {project_dir}")
 
-    # 3. download (PG-19 first, fallback Gutenberg)
-    source = "pg19"
-    try:
-        raw_bytes, source_url = fetch_from_pg19(book_id)
-        print(f"  Source:  PG-19  ({source_url})")
-    except FileNotFoundError as e:
-        print(f"  PG-19:   not found — fallback to Project Gutenberg")
-        raw_bytes, source_url = fetch_from_gutenberg(book)
-        source = "gutenberg"
-        print(f"  Source:  Gutenberg  ({source_url})")
-
-    # 4. write raw
     raw_path = os.path.join(project_dir, "raw", f"{prefix}_full.txt")
     with open(raw_path, "wb") as f:
         f.write(raw_bytes)
     print(f"  Raw:     {raw_path}  ({len(raw_bytes):,} bytes)")
 
-    # 5. provenance
     provenance = {
         "prefix":          prefix,
         "gutenberg_id":    book_id,
@@ -222,7 +196,6 @@ def fetch_raw(title: str, author: str, base_dir: str = ".") -> dict:
         json.dump(provenance, f, ensure_ascii=False, indent=2)
     print(f"  Source:  {prov_path}")
 
-    # 6. pipeline state
     if _HAS_STATE:
         ps = PipelineState(project_dir, prefix)
         ps.init_meta(gutenberg_id=book_id, title=book_title, source=source)
@@ -233,12 +206,71 @@ def fetch_raw(title: str, author: str, base_dir: str = ".") -> dict:
     return provenance
 
 
+def _download(book: dict) -> tuple[bytes, str, str]:
+    """Download raw text for a gutendex book record. Return (bytes, source, url)."""
+    try:
+        raw_bytes, source_url = fetch_from_pg19(book["id"])
+        print(f"  Source:  PG-19  ({source_url})")
+        return raw_bytes, "pg19", source_url
+    except FileNotFoundError:
+        print(f"  PG-19:   not found — fallback to Project Gutenberg")
+        raw_bytes, source_url = fetch_from_gutenberg(book)
+        print(f"  Source:  Gutenberg  ({source_url})")
+        return raw_bytes, "gutenberg", source_url
+
+
+def lookup_by_id(book_id: int) -> dict:
+    """Fetch a single gutendex book record by its Gutenberg ID."""
+    data = json.loads(_get(GUTENDEX_BY_ID.format(id=book_id)))
+    results = data.get("results", [])
+    if not results:
+        raise LookupError(f"No Gutenberg book found for ID {book_id}")
+    return results[0]
+
+
+def fetch_raw(title: str, author: str, base_dir: str = ".") -> dict:
+    print(f"\nPhase 1 — Fetch Raw")
+    print(f"  Searching: '{title}' by '{author}'")
+
+    candidates = search_gutendex(title, author)
+    book = pick_best(candidates, title, author)
+    authors = [p.get("name", "") for p in book.get("authors", [])]
+    print(f"  Found: [{book['id']}] {book['title']}  |  {', '.join(authors)}")
+
+    raw_bytes, source, source_url = _download(book)
+    return _finalize(book["id"], book["title"], authors, raw_bytes, source, source_url, base_dir)
+
+
+def fetch_raw_by_id(book_id: int, base_dir: str = ".") -> dict:
+    """Phase 1 by Gutenberg ID — same download + naming path as title/author."""
+    print(f"\nPhase 1 — Fetch Raw (by ID)")
+    print(f"  Looking up Gutenberg ID: {book_id}")
+
+    book = lookup_by_id(book_id)
+    authors = [p.get("name", "") for p in book.get("authors", [])]
+    print(f"  Found: [{book['id']}] {book['title']}  |  {', '.join(authors)}")
+
+    raw_bytes, source, source_url = _download(book)
+    return _finalize(book["id"], book["title"], authors, raw_bytes, source, source_url, base_dir)
+
+
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python engine/fetch_raw.py \"<title>\" \"<author>\" [base_dir]")
+    if len(sys.argv) < 2:
+        print("Usage:")
+        print("  python engine/fetch_raw.py \"<title>\" \"<author>\" [base_dir]")
+        print("  python engine/fetch_raw.py --id <gutenberg_id> [base_dir]")
         sys.exit(1)
-    fetch_raw(
-        title=sys.argv[1],
-        author=sys.argv[2],
-        base_dir=sys.argv[3] if len(sys.argv) > 3 else ".",
-    )
+    if sys.argv[1] == "--id":
+        fetch_raw_by_id(
+            book_id=int(sys.argv[2]),
+            base_dir=sys.argv[3] if len(sys.argv) > 3 else ".",
+        )
+    else:
+        if len(sys.argv) < 3:
+            print("Usage: python engine/fetch_raw.py \"<title>\" \"<author>\" [base_dir]")
+            sys.exit(1)
+        fetch_raw(
+            title=sys.argv[1],
+            author=sys.argv[2],
+            base_dir=sys.argv[3] if len(sys.argv) > 3 else ".",
+        )
