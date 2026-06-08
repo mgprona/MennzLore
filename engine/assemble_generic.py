@@ -41,10 +41,11 @@ def build_toc(all_eps, char_count, loc_count, concept_count, has_visual):
         "4. Master Timeline", "5. Foreshadowing Cross-Reference",
         "6. Character Arc Table", "7. Production -- Pillar 5 (Cinematography)",
         "8. Spatial -- Pillar 6 (Locations & Routes)",
+        "9. Map Generation Prompt",
     ]
     ep_range = f"EP{all_eps[0]:03d}-EP{all_eps[-1]:03d}" if all_eps else "?"
-    sections.append(f"9. Chapter Summaries ({ep_range})")
-    sections.append("10. Entity Directory")
+    sections.append(f"10. Chapter Summaries ({ep_range})")
+    sections.append("11. Entity Directory")
     sections.append(f"   - Characters ({char_count})")
     sections.append(f"   - Locations ({loc_count})")
     sections.append(f"   - Concepts ({concept_count})")
@@ -236,6 +237,27 @@ def build_spatial_section(p2batches):
         lines.append("*No spatial data available*")
     else:
         lines.append(f"**Totals:** {len(all_locations)} visual concepts")
+    lines.append("")
+    return "\n".join(lines)
+
+def build_map_prompt_section(project_dir, prefix):
+    lines = ["## Map Generation Prompt", ""]
+    prompt_path = os.path.join(project_dir, "output", "spatial", "map_image_prompt.json")
+    if os.path.exists(prompt_path):
+        try:
+            with open(prompt_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            lines.append("Use these prompts in AI image generators to create a tangible fantasy map of the story world:")
+            lines.append("")
+            lines.append("**Midjourney Prompt:**")
+            lines.append(f"```text\n{data.get('prompt_midjourney', '')}\n```")
+            lines.append("")
+            lines.append("**Stable Diffusion Prompt:**")
+            lines.append(f"```text\n{data.get('prompt_stable_diffusion', '')}\n```")
+        except Exception as e:
+            lines.append(f"*(Error loading map prompt: {e})*")
+    else:
+        lines.append("*(No map generation prompt found)*")
     lines.append("")
     return "\n".join(lines)
 
@@ -700,6 +722,7 @@ def assemble_lorebook(project_dir, prefix):
     full.append(build_char_arc_table(all_chars, p1data, p2batches, global_lore))
     full.append(build_production_section(p2batches))
     full.append(build_spatial_section(p2batches))
+    full.append(build_map_prompt_section(PROJECT, PREFIX))
     summaries = ["# Chapter Summaries"]
     for ep in all_eps:
         ch_path = os.path.join(CHAPTERS, f"{PREFIX}_EP{ep:02d}_summary.md")

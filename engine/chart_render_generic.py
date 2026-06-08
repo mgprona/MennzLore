@@ -377,6 +377,44 @@ def build_chart(project_dir, prefix):
     with open(os.path.join(output_dir, "chart_map_skeleton.svg"), "w", encoding="utf-8") as f:
         f.write(svg)
     print("  chart_map_skeleton.svg")
+
+    # Generate map visual prompts
+    loc_names = list(geo_data.keys())
+    top_locs = loc_names[:6]
+    locs_list_str = ", ".join(top_locs)
+    
+    map_prompt_midjourney = (
+        f"A beautiful fantasy map of the world of '{novel_name}' by {author}. "
+        f"Antique cartography style, old aged vintage parchment paper, sepia ink, hand-drawn map. "
+        f"Features key locations including: {locs_list_str}. "
+        f"Illustrations of mountains, rivers, forests, and old castles. Compass rose at the corner. "
+        f"Welsh calligraphic text labels, ornate border decoration, highly detailed, historical look, masterpiece, --ar 16:9"
+    )
+    
+    map_prompt_stable_diffusion = (
+        f"Fantasy map, cartography, hand-drawn map of '{novel_name}', antique style, "
+        f"aged yellow parchment, sepia ink illustration, calligraphy labeling {locs_list_str}, "
+        f"highly detailed fantasy geography, mountain peaks, rivers, forests, vintage compass rose, "
+        f"high resolution, masterpiece."
+    )
+    
+    prompt_data = {
+        "project": prefix,
+        "novel": novel_name,
+        "author": author,
+        "locations_included": top_locs,
+        "prompt_midjourney": map_prompt_midjourney,
+        "prompt_stable_diffusion": map_prompt_stable_diffusion
+    }
+    
+    with open(os.path.join(output_dir, "map_image_prompt.json"), "w", encoding="utf-8") as f:
+        json.dump(prompt_data, f, ensure_ascii=False, indent=2)
+    print("  map_image_prompt.json")
+    
+    with open(os.path.join(output_dir, "map_image_prompt.txt"), "w", encoding="utf-8") as f:
+        f.write(map_prompt_midjourney)
+    print("  map_image_prompt.txt")
+
     print(f"  Phase 10 complete — {output_dir}")
 
 if __name__ == "__main__":
