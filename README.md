@@ -1,6 +1,6 @@
 # 📚 MennzLore: Fictional Lore Extraction Engine & MCP Server
 
-> **MennzLore** คือระบบสกัดและวิเคราะห์ **Lore** (ตำนาน ประวัติศาสตร์ พจนานุกรม และความสัมพันธ์) จากงานประพันธ์ประเภท นิยาย บทภาพยนตร์ หรือซีรีส์ดิบ แปลงให้อยู่ในรูปของโครงสร้างข้อมูล (Structured Data) ที่สามารถค้นหา วิเคราะห์จุดเชื่อมโยง (Foreshadowing) และเรนเดอร์ออกมาเป็น **แผนที่ SVG ทางภูมิศาสตร์การเดินทาง** รวมถึง **ชุดคิวกล้องถ่ายทำ (Shot List)** และ **Image Prompts** ได้อย่างเป็นระบบ
+> **MennzLore** คือระบบสกัดและวิเคราะห์ **Lore** (ตำนาน ประวัติศาสตร์ พจนานุกรม และความสัมพันธ์) จากงานประพันธ์ประเภท นิยาย บทภาพยนตร์ หรือซีรีส์ดิบ แปลงให้อยู่ในรูปของโครงสร้างข้อมูล (Structured Data) ที่สามารถค้นหา วิเคราะห์จุดเชื่อมโยง (Foreshadowing) และเรนเดอร์ออกมาเป็น **แผนที่ SVG ทางภูมิศาสตร์การเดินทาง** รวมถึง **ชุดคิวกล้องถ่ายทำ (Shot List)** และ **Image Prompts สำหรับการสร้างภาพคีย์เฟรมและแผนที่ภาพโบราณ** ได้อย่างเป็นระบบ
 
 ---
 
@@ -10,7 +10,8 @@
 
 *   **1. Deterministic Engine (`engine/`):** สคริปต์ Python ที่ใช้ประมวลผลข้อมูล ดึงพจนานุกรม จัดระเบียบสถานที่ วาดแผนที่ และประกอบเป็นสรุปรวมเล่ม Markdown
 *   **2. LLM Core (`prompts/` & `schemas/`):** ชุดคำสั่งที่ใช้จัดระเบียบความคิดของ AI และ JSON Schemas สำหรับควบคุม Structured Outputs ป้องกันการป้อนข้อมูลที่หลุดกรอบ
-*   **3. Communication Bridge (`mcp_server/`):** ตัวเซิร์ฟเวอร์เชื่อมโยงการทำงานผ่านโปรโตคอล **Model Context Protocol (MCP)** เพื่อคุยกับ AI Client
+*   **3. Communication Bridge (`mcp_server/`):** ตัวเซิร์ฟเวอร์เชื่อมโยงการทำงานผ่านโปรโตคอล **Model Context Protocol (MCP)** เพื่อสื่อสารกับ AI Client
+*   **4. Visual Web Dashboard (`dashboard/`):** หน้าเว็บอินเตอร์เฟสสำหรับการสำรวจประวัติศาสตร์ไทม์ไลน์ และแผนที่เดินทางปฏิสัมพันธ์
 
 ---
 
@@ -30,81 +31,70 @@
 | **Phase 7** | Assemble | **Engine (assemble)** | `output/master_lorebook_full.md` (สารานุกรมรวมเล่ม) |
 | **Phase 8** | Finalize | Engine | อัปเดตข้อมูลสถิติ ขนาดตัวหนังสือ และประมวลผล Metadata |
 | **Phase 9** | Production Render | **Engine (production)** | `output/production/` (Image Prompts & Cinematography) |
-| **Phase 10** | Spatial Render | **Engine (spatial)** | `output/spatial/` (แผนที่เส้นทางเดินตัวละคร SVG & Coords) |
+| **Phase 10** | Spatial Render | **Engine (spatial)** | `output/spatial/` (แผนที่ SVG & พรอมต์แผนที่ภาพโบราณ) |
 
 ---
 
-## 💎 จุดเด่นที่ได้รับการปรับปรุงใหม่ (Clean Refactoring Highlights)
+## 💎 จุดเด่นที่ได้รับการปรับปรุงใหม่ (Latest Updates)
 
-1.  **รวมศูนย์ฟังก์ชันตัวช่วย (`engine/utils.py`):** ย้าย Logic ซ้ำซ้อนเกี่ยวกับการอ่าน-เขียนไฟล์ JSON และตัวกรองคำอ่านชื่อตัวละคร/สถานที่ (`normalize_name`, `normalize_location`) ไปอยู่จุดเดียว
-2.  **แก้บั๊ก Unicode Crash บน Windows (CP874 Thai):** ลบสัญลักษณ์ขีดกรอบลายเส้น Unicode (`\u2500` หรือ `─`) ในการแสดงผล log ออกทั้งหมด และเปลี่ยนมาใช้ขีด ASCII มาตรฐาน (`---`, `===`) ทำให้สคริปต์ไม่แครชบนระบบปฏิบัติการ Windows ที่ใช้การแสดงภาษาไทย
-3.  **การป้องกันข้อมูลลวงตา (Hallucination Control):** ใช้การตรวจรับข้อมูลแบบ Cross-field validation บน Pydantic V2 ใน `engine/lore_models.py` โดยระบบจะบล็อกทันทีหากตรวจพบว่า AI ป้อนรหัสฉาก (`in_scene_id`) อ้างอิงไปยังฉากที่ไม่มีอยู่จริงในตอนนั้น ๆ
+1.  **ตัวติดตั้งอัตโนมัติ (`install.py`):** เพิ่มสคริปต์ติดตั้งระบบเบ็ดเสร็จในคำสั่งเดียว ช่วยดาวน์โหลดแพ็กเกจ สำรองข้อมูล และเชื่อมต่อไฟล์ตั้งค่าเข้ากับแอปพลิเคชัน AI ให้เองทันที
+2.  **ระบบพรอมต์แผนที่จำลองแฟนตาซี (Antique Cartography Prompt):** ใน Phase 10 ระบบจะคำนวณและสกัดพิกัดภูมิศาสตร์ออกมาสร้างเป็น **Map Generation Prompts** สำหรับส่งต่อไปยัง AI Image Generators (เช่น Midjourney/Stable Diffusion) เพื่อสร้างแผนที่โบราณสไตล์กระดาษอาร์ตย้อนยุค
+3.  **แก้บั๊ก Unicode Crash บน Windows:** ลบสัญลักษณ์ขีดกรอบลายเส้น Unicode (`\u2500` หรือ `─`) ในการแสดงผล log ออกทั้งหมด และเปลี่ยนมาใช้ขีด ASCII มาตรฐาน (`---`, `===`) ทำให้สคริปต์รันบนระบบปฏิบัติการ Windows ภาษาไทยได้โดยไม่แครช
+4.  **การควบคุมอารมณ์และสไตล์ของภาพ (Art Direction Control):** ระบบจำแนกประเภทวรรณกรรมอัตโนมัติ (เช่น ไซไฟย้อนยุค, แฟนตาซีมิติมืด, ตำนานเทพปรัมปรา) เพื่อสร้างแนวทางควบคุมมุมกล้อง โทนสี แสง และเลนส์ถ่ายทำภาพยนตร์ที่เหมาะสมของแต่ละตอน
 
 ---
 
-## 🚀 Model Context Protocol (MCP) Server Playbook
+## 🚀 วิธีติดตั้งและใช้งาน MCP Server (Playbook)
 
-ระบบมาพร้อมเซิร์ฟเวอร์ MCP ที่ช่วยแปลงระบบวิเคราะห์วรรณกรรมให้กลายเป็น **เครื่องมือสำหรับ AI Client** (เช่น Claude Desktop หรือ Cursor) สามารถเรียกประมวลผลเนื้อหาได้จากห้องแชต
+คุณสามารถนำ **MennzLore MCP Server** ไปเชื่อมต่อใช้งานกับแอปแชทและโปรแกรมเขียนโค้ดต่างๆ (เช่น Claude Desktop, Claude Code CLI, Cursor, หรือ Windsurf) ได้ง่ายๆ ด้วยขั้นตอนด้านล่างนี้:
 
-### วิธีติดตั้งลงใน Claude Desktop
-แก้ไขไฟล์ตั้งค่าคอนฟิก `claude_desktop_config.json` (พิกัดปกติอยู่ที่ `%APPDATA%/Claude/` บน Windows):
+### 1. ติดตั้งแบบอัตโนมัติ (One-liner Installation)
+เปิดโปรแกรม **PowerShell** ในเครื่องคอมพิวเตอร์ของคุณ แล้วคัดลอกคำสั่งนี้ไปรัน:
+```powershell
+python -c "import urllib.request; exec(urllib.request.urlopen('https://raw.githubusercontent.com/mgprona/MennzLore/master/install.py').read())"
+```
+*สคริปต์จะดาวน์โหลดแพ็กเกจที่จำเป็น และเขียนพาธลงในไฟล์คอนฟิก `claude_desktop_config.json` ในเครื่องคุณให้อัตโนมัติทันที*
 
+### 2. ติดตั้งแบบกำหนดเอง (Manual Configuration)
+หากต้องการตั้งค่าพาธด้วยตัวเอง ให้ใส่ข้อมูลนี้ลงในไฟล์ตั้งค่า MCP Server ของแอปพลิเคชันของคุณ:
 ```json
 {
   "mcpServers": {
-    "mennz-lore": {
+    "mennzlore": {
       "command": "python",
       "args": [
         "C:/Users/mennz/.gemini/antigravity/scratch/MennzLore/mcp_server/server.py"
-      ]
+      ],
+      "env": {
+        "OPENROUTER_API_KEY": "YOUR_OPENROUTER_API_KEY_HERE"
+      }
     }
   }
 }
 ```
 
-### รายการเครื่องมือที่พร้อมให้บริการ (Exposed Tools)
-
-1.  **`verify_character_names`**
-    *   *หน้าที่:* เปรียบเทียบไฟล์ Name Map กับเนื้อเรื่องดิบเพื่อหาชื่อตัวละครที่สะกดผิดหรือไม่มีอยู่จริงในนิยาย
-2.  **`merge_micro_facts`**
-    *   *หน้าที่:* รวมไฟล์ผลลัพธ์จากการวิเคราะห์ 3-Pass (Architect, Profiler, Chronicler) ของตอนนั้น ๆ พร้อมรัน Pydantic เพื่อ Validate ความถูกต้องของความสัมพันธ์
-3.  **`assemble_lorebook_tool`**
-    *   *หน้าที่:* ประมวลผลจากโฟลเดอร์ผลลัพธ์รายตอนมาสร้างสารานุกรมรวมเล่ม Markdown เล่มเดี่ยว
-4.  **`render_production_tool`**
-    *   *หน้าที่:* สร้างช็อตกล้องถ่ายหนัง (Shot Lists) และ Prompt เจนภาพสวยงามสำหรับแต่ละฉากเด่น
-5.  **`render_map_tool`**
-    *   *หน้าที่:* สร้างพิกัดและวาดเส้นทางการเดินทางของตัวละครเป็นแผนที่เวกเตอร์กราฟิก (SVG)
+### 3. รายการเครื่องมือที่พร้อมให้บริการ (Exposed Tools)
+เมื่อติดตั้งเสร็จ ตัวเอไอจะเข้าถึงเครื่องมือเหล่านี้ได้ทันทีในห้องแชท:
+*   **`verify_character_names`:** ตรวจสอบความถูกต้องของคำสะกดตัวละครเทียบกับบทเนื้อเรื่องดิบ
+*   **`merge_micro_facts`:** รวมและ Validate ไฟล์ข้อมูล 3-Pass รายตอน
+*   **`assemble_lorebook_tool`:** สรุปรวบรวมไฟล์รายงานตอนทั้งหมดมาประกอบเข้าเล่มเดี่ยว
+*   **`render_production_tool`:** สร้างคิวกล้อง Shot List และพรอมต์สตอรี่บอร์ดภาพยนตร์
+*   **`render_map_tool`:** เรนเดอร์พิกัดภูมิศาสตร์ออกมาเป็นแผนที่เวกเตอร์ SVG
+*   **`open_dashboard_tool`:** เปิดรันเซิร์ฟเวอร์หน้าเว็บแผนที่พิกัดที่ `http://localhost:8000`
 
 ---
 
-## 📊 ตัวอย่างการใช้งานและทวนสอบจริง (Validation Showcase)
+## 📊 ตัวอย่างวรรณกรรมที่ใช้ทวนสอบจริง (Validation Showcases)
 
-เราได้ทำการทดสอบระบบแบบ **ทีละขั้นตอน (Phase-by-Phase)** กับวรรณกรรมเรื่อง **"The Time Machine"** ของ **H. G. Wells** (ความยาวรวม 8 ตอน) สำเร็จลุล่วงอย่างไร้ข้อผิดพลาด:
+ระบบได้รับการยืนยันการทำงานและสกัดข้อมูลสำเร็จ 100% กับวรรณกรรมประวัติศาสตร์และตำนานโบราณ:
 
-### 1. โครงสร้างโฟลเดอร์ของโปรเจกต์งานเขียน (Project Layout)
-เมื่อเราสร้างผลงานขึ้นมา ระบบจะจัดเก็บไฟล์อย่างเป็นระบบแยกจาก Repo หลัก ดังนี้:
-```text
-time-machine-project/
-├── raw/                      # ไฟล์ต้นฉบับบทดิบ tm_EP001.txt - tm_EP008.txt
-├── analysis/sa_raw/          # ข้อมูลวิเคราะห์ดิบ 3-Pass
-├── micro_facts/              # ไฟล์ไมโครแฟกต์สมบูรณ์ (ผ่านการคัดกรอง Pydantic)
-├── verification/             # ตัวสะกดชื่อตัวละครและแผนการดำเนินเนื้อเรื่อง
-│   ├── tm_name_map.json
-│   └── tm_global_lore.json
-└── output/                   # ผลผลิตสุดท้าย
-    ├── tm_master_lorebook_full.md  # สารานุกรมรวมเล่มสมบูรณ์
-    ├── production/           # คิวกล้องและ Prompt รูปภาพ
-    └── spatial/              # แผนที่ SVG และข้อมูลภูมิศาสตร์จำลอง
-```
+### 1. **The Time Machine** (วรรณกรรมไซไฟวิทยาศาสตร์ โดย H. G. Wells)
+*   **ขนาดข้อมูล:** 8 ตอน (EP001 - EP008)
+*   **ผลลัพธ์:** สกัดเหตุการณ์สำคัญ 24 เหตุการณ์, ตรวจพบตัวละคร 11 ตัวเด่นอย่างแม่นยำ (0 Missing Characters), สร้างแผนผังพิกัดอนาคตไกล และภาพร่างคีย์เฟรมการเดินทางข้ามเวลาสไตล์อุตสาหกรรม
 
-### 2. ผลการสแกนชื่อตัวละคร (verify_character_names):
-ระบบสแกนเอกสารดิบทั้ง 8 ตอนเพื่อเทียบกับแผนผังรายชื่อ 11 คนหลักในทันที:
-*   สแกนพบตัวละครครบถ้วน **(0 Missing Characters)**
-*   รายงานพบความถี่การปรากฏตัวเด่นชัด เช่น *The Time Traveller* ปรากฏตัว 176 ครั้ง, *Weena* ปรากฏ 54 ครั้ง, และ *Hillyer* ปรากฏ 1 ครั้ง
-
-### 3. ผลผลิตสำเร็จรูป (Generated Output):
-*   **[Master Lorebook](file:///C:/Users/mennz/.gemini/antigravity/scratch/time-machine-project/output/tm_master_lorebook_full.md):** รวบรวมข้อมูลสรุป ตัวละคร เหตุการณ์ และรายละเอียดของสถานที่ ผลิตขึ้นมาเป็นเอกสารรวมเล่มขนาด 13.5 KB อย่างสวยงาม
-*   **[แผนที่จำลองเดินทาง SVG](file:///C:/Users/mennz/.gemini/antigravity/scratch/time-machine-project/output/spatial/chart_map_skeleton.svg):** คำนวณความใกล้ไกลของฉากต่าง ๆ ในอนาคต (เช่น ห้องทดลอง Richmond, ลาน Sphinx, และแม่น้ำตื้น) วาดออกมาเป็นแผนที่เวกเตอร์ความละเอียดสูงพร้อมนำไปใช้งานต่อ
+### 2. **The Fates of the Princes of Dyfed** (ตำนานเวลส์ปรัมปรา โดย Kenneth Morris)
+*   **ขนาดข้อมูล:** 9 ตอน (EP001 - EP009)
+*   **ผลลัพธ์:** ตรวจพบตัวละครหลักและสถานที่โบราณ, สร้างแผนผังความสัมพันธ์ D3.js บน Dashboard, เรนเดอร์แผนที่ประวัติศาสตร์ของแคว้น Dyfed ในแบบจำลองโบราณ และสกัดพรอมต์ความละเอียดสูงสำหรับเจนแผนที่แฟนตาซีฉบับกระดาษเขียนสีโบราณ (Antique Cartography)
 
 ---
 
