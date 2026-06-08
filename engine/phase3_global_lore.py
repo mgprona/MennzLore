@@ -137,6 +137,75 @@ Produce exactly this JSON structure (no extra keys, no markdown wrapper):
 """
 
 
+# ── prompt builder (shared by API path AND MCP prompt path) ───────────────────
+
+def _load_clean_chapters(project_dir: str, prefix: str) -> list[tuple[str, str]]:
+    """Return [(ep_id, text), ...] for all clean chapter files."""
+    pattern = os.path.join(project_dir, "clean", f"{prefix}_EP*.txt")
+    paths = sorted(_glob.glob(pattern))
+    if not paths:
+        raise FileNotFoundError(f"No clean files found: {pattern}")
+    chapters = []
+    for p in paths:
+        ep_id = os.path.basename(p).replace(f"{prefix}_", "").replace(".txt", "")
+        with open(p, encoding="utf-8") as f:
+            chapters.append((ep_id, f.read()))
+    return chapters
+
+
+def build_global_lore_prompt(project_dir: str, prefix: str) -> str:
+    """Build the full global-lore extraction prompt (system rules + chapter texts).
+
+    This is what the *connected* AI thinks about — no external API needed.
+    The AI returns a JSON object with the four required keys, which is then
+    persisted via write_global_lore_outputs().
+    """
+    chapters = _load_clean_chapters(project_dir, prefix)
+    return SYSTEM_PROMPT + "\n\n" + _build_user_prompt(prefix, chapters)
+
+
+# ── output writer (deterministic — shared by both paths) ──────────────────────
+
+def write_global_lore_outputs(project_dir: str, prefix: str, result: dict) -> dict:
+    """Validate the four top-level keys and write the verification/ JSON files."""
+    required = {"global_lore", "name_map", "timeline_framework", "chapter_appearance"}
+    missing = required - set(result.keys())
+    if missing:
+        raise ValueError(f"Global-lore JSON missing keys: {missing}")
+
+    ver_dir = os.path.join(project_dir, "verification")
+    os.makedirs(ver_dir, exist_ok=True)
+
+    outputs = {
+        "global_lore":        f"{prefix}_global_lore.json",
+        "name_map":           f"{prefix}_name_map.json",
+        "timeline_framework": f"{prefix}_timeline_framework.json",
+        "chapter_appearance": f"{prefix}_chapter_appearance.json",
+    }
+    for key, filename in outputs.items():
+        out_path = os.path.join(ver_dir, filename)
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(result[key], f, ensure_ascii=False, indent=2)
+        print(f"  Wrote: {out_path}")
+
+    nm = result["name_map"].get("name_map", {})
+    if _HAS_STATE:
+        ps = PipelineState(project_dir, prefix)
+        ps.set_phase("3_global_lore", "COMPLETE",
+                     outputs=[f"verification/{v}" for v in outputs.values()])
+        ps.set_phase("3_name_map", "COMPLETE",
+                     file=f"verification/{outputs['name_map']}",
+                     entries=len(nm))
+
+    return {
+        "characters":       len(result["global_lore"].get("characters", [])),
+        "name_map_entries": len(nm),
+        "timeline_entries": len(result["timeline_framework"].get("timeline_framework", [])),
+        "chapter_appearance_entries": len(result["chapter_appearance"].get("chapter_appearance", {})),
+        "outputs":          [f"verification/{v}" for v in outputs.values()],
+    }
+
+
 # ── LLM call ─────────────────────────────────────────────────────────────────
 
 def call_llm(system: str, user: str, model: str = "gpt-4o") -> dict:
@@ -162,20 +231,16 @@ def call_llm(system: str, user: str, model: str = "gpt-4o") -> dict:
 # ── main ─────────────────────────────────────────────────────────────────────
 
 def run_phase3_global_lore(project_dir: str, prefix: str, model: str = "gpt-4o") -> dict:
-    print(f"\nPhase 3.1 — Global Lore + Name Map")
+    """API fallback path: call an external LLM to extract global lore.
+
+    Prefer the MCP prompt path (the connected AI does the extraction) — this
+    function exists only for headless/CLI runs where no MCP client is attached.
+    """
+    print(f"\nPhase 3.1 — Global Lore + Name Map (API path)")
     print(f"  Project: {project_dir}  |  Prefix: {prefix}")
 
-    # 1. load clean chapters
-    pattern = os.path.join(project_dir, "clean", f"{prefix}_EP*.txt")
-    paths = sorted(_glob.glob(pattern))
-    if not paths:
-        raise FileNotFoundError(f"No clean files found: {pattern}")
-
-    chapters = []
-    for p in paths:
-        ep_id = os.path.basename(p).replace(f"{prefix}_", "").replace(".txt", "")
-        with open(p, encoding="utf-8") as f:
-            chapters.append((ep_id, f.read()))
+    # 1. load clean chapters + build prompt
+    chapters = _load_clean_chapters(project_dir, prefix)
     print(f"  Loaded {len(chapters)} chapters: {[ep for ep, _ in chapters]}")
 
     # 2. call LLM
@@ -183,46 +248,13 @@ def run_phase3_global_lore(project_dir: str, prefix: str, model: str = "gpt-4o")
     user_prompt = _build_user_prompt(prefix, chapters)
     result = call_llm(SYSTEM_PROMPT, user_prompt, model=model)
 
-    # 3. validate top-level keys
-    required = {"global_lore", "name_map", "timeline_framework", "chapter_appearance"}
-    missing = required - set(result.keys())
-    if missing:
-        raise ValueError(f"LLM response missing keys: {missing}")
+    # 3. validate + write (shared deterministic path)
+    stats = write_global_lore_outputs(project_dir, prefix, result)
 
-    # 4. write output files
-    ver_dir = os.path.join(project_dir, "verification")
-    os.makedirs(ver_dir, exist_ok=True)
-
-    outputs = {
-        "global_lore":        f"{prefix}_global_lore.json",
-        "name_map":           f"{prefix}_name_map.json",
-        "timeline_framework": f"{prefix}_timeline_framework.json",
-        "chapter_appearance": f"{prefix}_chapter_appearance.json",
-    }
-    for key, filename in outputs.items():
-        out_path = os.path.join(ver_dir, filename)
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(result[key], f, ensure_ascii=False, indent=2)
-        print(f"  Wrote: {out_path}")
-
-    # 5. pipeline state
-    nm = result["name_map"].get("name_map", {})
-    wb = result["global_lore"].get("world_building_and_motifs", [])
-    chars = result["global_lore"].get("characters", [])
-    tl = result["timeline_framework"].get("timeline_framework", [])
-    ca = result["chapter_appearance"].get("chapter_appearance", {})
-
-    if _HAS_STATE:
-        ps = PipelineState(project_dir, prefix)
-        ps.set_phase("3_global_lore", "COMPLETE",
-                     outputs=[f"verification/{v}" for v in outputs.values()],
-                     mode="phase3_global_lore_script")
-        ps.set_phase("3_name_map", "COMPLETE",
-                     file=f"verification/{outputs['name_map']}",
-                     entries=len(nm))
-
-    print(f"\nPhase 3.1 complete  — {len(chars)} chars, {len(wb)} world items, "
-          f"{len(nm)} name_map entries, {len(tl)} timeline entries, {len(ca)} chapter_appearance entries")
+    print(f"\nPhase 3.1 complete  — {stats['characters']} chars, "
+          f"{stats['name_map_entries']} name_map entries, "
+          f"{stats['timeline_entries']} timeline entries, "
+          f"{stats['chapter_appearance_entries']} chapter_appearance entries")
     return result
 
 

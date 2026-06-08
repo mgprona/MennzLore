@@ -61,6 +61,19 @@ python engine/split_chapters.py <project_dir> [prefix]
 
 ---
 
+## Phase 3.1 — Global Lore + Name Map (LLM)
+
+ใช้ **AI ที่เชื่อมต่ออยู่** (MCP client) เป็นคนสกัด ไม่ต้องตั้ง API key แยก:
+
+1. ขอ prompt ผ่าน MCP prompt `extract_global_lore(project_dir, prefix)` — server อ่าน `clean/<prefix>_EP*.txt` ทั้งหมดแล้วฝังลงใน prompt
+2. AI อ่าน + คิด → คืน JSON object ที่มี 4 key: `global_lore`, `name_map`, `timeline_framework`, `chapter_appearance`
+3. ส่ง JSON เข้า MCP tool `save_global_lore(...)` → validate + เขียน `verification/<prefix>_*.json`
+
+> **ทางสำรอง (headless/CLI):** `run_global_lore` หรือ `python engine/phase3_global_lore.py <project_dir> [prefix]`
+> เรียก LLM ภายนอกผ่าน `OPENAI_API_KEY` — ใช้เฉพาะตอนไม่มี MCP client เชื่อมต่อ
+
+---
+
 ## Phase 4 — 3-Pass Analysis (หัวใจ LLM)
 
 แต่ละตอนผ่าน 3 pass เรียงกัน โดย output ของ pass ก่อนหน้าเป็น input ของ pass ถัดไป

@@ -299,11 +299,45 @@ def split_into_chapters(project_dir: str, prefix: str = "") -> dict:
         return {"status": "error", "message": str(e)}
 
 @mcp.tool()
+def save_global_lore(project_dir: str, global_lore: dict, name_map: dict,
+                     timeline_framework: dict, chapter_appearance: dict,
+                     prefix: str = "") -> dict:
+    """
+    Phase 3.1 (recommended): Persist the global-lore analysis that YOU (the connected
+    AI) produced from the chapter texts. Call the `extract_global_lore` prompt first,
+    reason over the chapters, then pass the four resulting JSON objects here. This is
+    the MCP-native path — no external API key required.
+
+    Args:
+        project_dir: Path to the project directory.
+        global_lore: The global_lore object (book_metadata, characters, etc.).
+        name_map: The name_map object (canonical names, aliases, lore_type).
+        timeline_framework: The timeline_framework object.
+        chapter_appearance: The chapter_appearance object.
+        prefix: Project prefix (optional, defaults to project directory name).
+    """
+    from engine.phase3_global_lore import write_global_lore_outputs
+    try:
+        if not prefix:
+            prefix = os.path.basename(project_dir.rstrip("/\\"))
+        result = {
+            "global_lore": global_lore,
+            "name_map": name_map,
+            "timeline_framework": timeline_framework,
+            "chapter_appearance": chapter_appearance,
+        }
+        stats = write_global_lore_outputs(project_dir, prefix, result)
+        return {"status": "success", **stats}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
 def run_global_lore(project_dir: str, prefix: str = "", model: str = "gpt-4o") -> dict:
     """
-    Phase 3.1: Read all clean chapter files and extract global lore + name map +
-    timeline framework + chapter appearances via an LLM (OpenAI Structured Outputs).
-    Requires OPENAI_API_KEY in the environment.
+    Phase 3.1 (API fallback): Extract global lore via an EXTERNAL LLM. Use this only
+    for headless/CLI runs. When connected to an MCP client, prefer the
+    `extract_global_lore` prompt + `save_global_lore` tool so the connected AI does
+    the extraction (no OPENAI_API_KEY needed). Requires OPENAI_API_KEY in the env.
 
     Args:
         project_dir: Path to the project directory (must contain clean/<prefix>_EP###.txt).
@@ -438,6 +472,16 @@ def get_micro_facts_example() -> str:
 
 
 # ─── PROMPTS ────────────────────────────────────────────────────────────────
+
+@mcp.prompt()
+def extract_global_lore(project_dir: str, prefix: str = "") -> str:
+    """Phase 3.1 prompt: read all clean chapters and extract global lore, name map,
+    timeline framework, and chapter appearances. Reason over the returned prompt,
+    then persist your JSON result with the `save_global_lore` tool."""
+    from engine.phase3_global_lore import build_global_lore_prompt
+    if not prefix:
+        prefix = os.path.basename(project_dir.rstrip("/\\"))
+    return build_global_lore_prompt(project_dir, prefix)
 
 @mcp.prompt()
 def analyze_architect(chapter_text: str) -> str:
