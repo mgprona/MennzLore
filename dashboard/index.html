@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MennzLore - Fictional World Explorer</title>
+    <!-- Google Fonts & Material Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <!-- D3.js for Relationship Graphs -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0f111a;
+            --panel-bg: rgba(22, 25, 41, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --accent-color: #3b82f6;
+            --accent-gradient: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --font-main: 'Inter', sans-serif;
+            --font-title: 'Outfit', sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font-main);
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Top Bar */
+        header {
+            height: 60px;
+            background: rgba(15, 17, 26, 0.9);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            backdrop-filter: blur(10px);
+            z-index: 10;
+        }
+
+        .logo {
+            font-family: var(--font-title);
+            font-size: 20px;
+            font-weight: 700;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .project-selector {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        select {
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 6px 12px;
+            border-radius: 6px;
+            outline: none;
+            font-family: var(--font-main);
+            cursor: pointer;
+        }
+
+        /* Main Layout Grid */
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Side Panel (Left) */
+        .sidebar {
+            width: 320px;
+            background: var(--panel-bg);
+            border-right: 1px solid var(--border-color);
+            backdrop-filter: blur(12px);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .panel-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            font-family: var(--font-title);
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .episode-list {
+            list-style: none;
+        }
+
+        .episode-item {
+            padding: 12px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .episode-item:hover, .episode-item.active {
+            background: rgba(59, 130, 246, 0.1);
+            border-left: 4px solid var(--accent-color);
+            padding-left: 16px;
+        }
+
+        .episode-title {
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .episode-meta {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        /* Center Panel (Map & Timeline) */
+        .center-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: rgba(10, 11, 18, 0.95);
+            position: relative;
+        }
+
+        .map-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .map-container svg {
+            width: 100%;
+            height: 100%;
+            max-width: 1000px;
+            max-height: 700px;
+        }
+
+        /* Timeline Player Controls */
+        .timeline-controls {
+            height: 80px;
+            background: rgba(22, 25, 41, 0.9);
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 12px 24px;
+            justify-content: center;
+            backdrop-filter: blur(10px);
+        }
+
+        .timeline-slider-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            width: 100%;
+        }
+
+        .timeline-slider {
+            flex: 1;
+            -webkit-appearance: none;
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.1);
+            outline: none;
+            cursor: pointer;
+        }
+
+        .timeline-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--accent-color);
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+            transition: transform 0.1s ease;
+        }
+
+        .timeline-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        .btn-play {
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            cursor: pointer;
+            outline: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: var(--accent-gradient);
+            box-shadow: 0 0 10px rgba(139, 92, 246, 0.4);
+        }
+
+        .timeline-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 6px;
+            padding: 0 10px;
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        /* Right Panel (Social Network Graph & Details) */
+        .right-panel {
+            width: 380px;
+            background: var(--panel-bg);
+            border-left: 1px solid var(--border-color);
+            backdrop-filter: blur(12px);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .graph-container {
+            height: 280px;
+            border-bottom: 1px solid var(--border-color);
+            position: relative;
+            background: rgba(10, 11, 20, 0.4);
+        }
+
+        .details-container {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .section-title {
+            font-family: var(--font-title);
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--accent-color);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .detail-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 14px;
+            margin-bottom: 16px;
+        }
+
+        .detail-card h4 {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: var(--text-primary);
+        }
+
+        .detail-card p {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        /* Tooltips */
+        .tooltip {
+            position: absolute;
+            background: rgba(15, 17, 26, 0.95);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 12px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo">
+            <span class="material-icons-round">auto_stories</span>
+            MennzLore World Explorer
+        </div>
+        <div class="project-selector">
+            <label for="project-select" style="font-size: 13px; color: var(--text-secondary);">Project:</label>
+            <select id="project-select">
+                <option value="time-machine-project">The Time Machine</option>
+                <option value="voodoo-planet-qa">Voodoo Planet</option>
+            </select>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <!-- Sidebar (Left) -->
+        <div class="sidebar">
+            <div class="panel-header">
+                <span class="material-icons-round">list_alt</span>
+                Episodes & Chapters
+            </div>
+            <ul class="episode-list" id="episode-list">
+                <!-- Populated via Javascript -->
+            </ul>
+        </div>
+
+        <!-- Center Panel (Map & Timeline) -->
+        <div class="center-panel">
+            <div class="panel-header">
+                <span class="material-icons-round">map</span>
+                Fictional Route Geography
+            </div>
+            <div class="map-container" id="map-container">
+                <!-- SVG map loaded here -->
+            </div>
+            <div class="timeline-controls">
+                <div class="timeline-slider-row">
+                    <button class="btn-play" id="btn-play">
+                        <span class="material-icons-round" id="play-icon">play_arrow</span>
+                    </button>
+                    <input type="range" class="timeline-slider" id="timeline-slider" min="1" max="8" value="1">
+                    <span id="timeline-val" style="font-size: 14px; font-weight: 600; width: 60px;">EP001</span>
+                </div>
+                <div class="timeline-labels" id="timeline-labels">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel (Graphs & Details) -->
+        <div class="right-panel">
+            <div class="panel-header">
+                <span class="material-icons-round">share</span>
+                Relationship Social Graph
+            </div>
+            <div class="graph-container">
+                <svg id="social-graph" style="width: 100%; height: 100%;"></svg>
+            </div>
+            <div class="details-container">
+                <div class="section-title">
+                    <span class="material-icons-round">info</span>
+                    Chapter Analysis details
+                </div>
+                <div id="details-content">
+                    <div class="detail-card">
+                        <h4>Select an Episode</h4>
+                        <p>Click on any episode on the left panel or timeline slider to display detailed lore metrics, character behaviors, and events.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tooltip" id="tooltip"></div>
+
+    <script src="/app.js"></script>
+</body>
+</html>

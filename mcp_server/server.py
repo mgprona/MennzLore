@@ -17,12 +17,16 @@ for d in (ROOT_DIR, ENGINE_DIR):
 
 from fastmcp import FastMCP
 
-# Import engine functions
 from engine.merge_to_micro_facts import merge_to_micro_facts
 from engine.assemble_generic import assemble_lorebook
 from engine.assemble_production_generic import build_production
 from engine.chart_render_generic import build_chart
 from engine.verify_names import verify_names
+from engine.rag_memory import query_past_lore
+from engine.image_generator import generate_storyboard
+import subprocess
+import socket
+
 
 # Initialize FastMCP Server
 mcp = FastMCP("MennzLore")
@@ -120,6 +124,67 @@ def render_map_tool(project_dir: str, prefix: str = "") -> str:
         return f"[OK] Spatial maps successfully rendered in {out_dir}."
     except Exception as e:
         return f"[ERROR] Failed to render map: {e}"
+
+@mcp.tool()
+def open_dashboard_tool() -> str:
+    """
+    Launch the interactive world explorer web dashboard on http://localhost:8000.
+    Checks if the port is already open before starting the server.
+    """
+    port = 8000
+    # Check if port is already open
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        is_open = s.connect_ex(('localhost', port)) == 0
+        
+    if is_open:
+        return f"[OK] Dashboard is already running and accessible at http://localhost:{port}"
+        
+    try:
+        server_path = os.path.join(ROOT_DIR, "engine", "dashboard_server.py")
+        subprocess.Popen([sys.executable, server_path], close_fds=True)
+        return f"[OK] Started interactive dashboard server. Open http://localhost:{port} in your browser."
+    except Exception as e:
+        return f"[ERROR] Failed to start dashboard server: {e}"
+
+@mcp.tool()
+def query_past_lore_tool(project_dir: str, prefix: str, query: str, limit: int = 5) -> list:
+    """
+    Search past episodes' micro-facts for relevant background context (Local RAG Memory).
+    
+    Args:
+        project_dir: Path to the project directory.
+        prefix: Project prefix (e.g. 'tm').
+        query: Search term (e.g. name of character or location).
+        limit: Max number of facts to return.
+    """
+    try:
+        results = query_past_lore(project_dir, prefix, query, limit)
+        return [doc["text"] for doc in results]
+    except Exception as e:
+        return [f"[ERROR] Failed to query RAG: {e}"]
+
+@mcp.tool()
+def generate_storyboard_tool(project_dir: str, prefix: str, approved_scenes: list, model_id: str = "google/gemini-2.5-flash-image") -> str:
+    """
+    Generate storyboard images for approved scenes using OpenRouter.
+    Only scenes in the approved_scenes list will be generated to control costs.
+    
+    Args:
+        project_dir: Path to the project directory.
+        prefix: Project prefix.
+        approved_scenes: List of scene IDs (e.g. ['SC-001', 'SC-002']) to generate.
+        model_id: OpenRouter model ID to use (defaults to Gemini 2.5 Flash Image).
+    """
+    try:
+        res = generate_storyboard(project_dir, prefix, approved_scenes, model_id)
+        if res["status"] == "ok":
+            return (f"[OK] Storyboard rendering completed. "
+                    f"Generated: {res['generated_count']} images | "
+                    f"Skipped/Existed: {res['skipped_count']} images.")
+        else:
+            return f"[ERROR] Generation failed: {res.get('message', 'Unknown error')}"
+    except Exception as e:
+        return f"[ERROR] Storyboard generation threw exception: {e}"
 
 
 # ─── RESOURCES ──────────────────────────────────────────────────────────────

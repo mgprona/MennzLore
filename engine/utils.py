@@ -92,3 +92,58 @@ def normalize_location(raw_loc: str) -> str:
     loc = re.sub(r'\s+-- .*$', '', loc)
     loc = loc.split(" — ")[0] if " — " in loc else loc
     return loc.strip()
+
+import hashlib
+
+def calculate_file_hash(file_path: str) -> str:
+    """Calculate MD5 hash of a file's content to detect changes."""
+    if not os.path.exists(file_path):
+        return ""
+    hasher = hashlib.md5()
+    try:
+        with open(file_path, "rb") as f:
+            buf = f.read()
+            hasher.update(buf)
+        return hasher.hexdigest()
+    except Exception as e:
+        print(f"[WARNING] Failed to calculate hash for {file_path}: {e}")
+        return ""
+
+def is_episode_cached(project_dir: str, prefix: str, ep_num: str, raw_filepath: str) -> bool:
+    """Check if the episode's raw content hash matches the cached state and output exists."""
+    # Check if final output exists
+    mf_dir = os.path.join(project_dir, "micro_facts")
+    if not os.path.isdir(mf_dir):
+        mf_dir = os.path.join(project_dir, "analysis", "micro_facts")
+    
+    out_path = os.path.join(mf_dir, f"{prefix}_{ep_num}_micro_facts.json")
+    if not os.path.exists(out_path):
+        return False
+        
+    # Check state file
+    state_path = os.path.join(project_dir, f"{prefix}_pipeline_state.json")
+    if not os.path.exists(state_path):
+        return False
+        
+    state = load_json(state_path)
+    cached_hash = state.get("episode_hashes", {}).get(ep_num, {}).get("raw_hash", "")
+    current_hash = calculate_file_hash(raw_filepath)
+    
+    return current_hash != "" and current_hash == cached_hash
+
+def update_episode_cache(project_dir: str, prefix: str, ep_num: str, raw_filepath: str):
+    """Update the cache hash for a specific episode in the project state file."""
+    state_path = os.path.join(project_dir, f"{prefix}_pipeline_state.json")
+    state = load_json(state_path)
+    
+    if "episode_hashes" not in state:
+        state["episode_hashes"] = {}
+        
+    current_hash = calculate_file_hash(raw_filepath)
+    if current_hash:
+        state["episode_hashes"][ep_num] = {
+            "raw_hash": current_hash,
+            "merged_facts_exists": True
+        }
+        write_json(state_path, state)
+
