@@ -104,7 +104,12 @@ def get_playlist_metadata(playlist_url, proxy=None):
 def check_subtitles_availability(video_id, proxies=None):
     """Check if Thai (th) or English (en) transcripts are available on YouTube."""
     try:
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id, proxies=proxies)
+        session = requests.Session()
+        if proxies:
+            session.proxies = proxies
+        api = YouTubeTranscriptApi(http_client=session)
+        transcript_list = api.list(video_id)
+        
         # Try to find Thai or English manual/auto transcripts
         languages = ['th', 'en']
         for lang in languages:
@@ -115,8 +120,7 @@ def check_subtitles_availability(video_id, proxies=None):
                 return {
                     "available": True,
                     "lang": lang_code,
-                    "type": "auto" if is_auto else "manual",
-                    "transcript_obj": transcript
+                    "type": "auto" if is_auto else "manual"
                 }
             except NoTranscriptFound:
                 continue
@@ -126,22 +130,32 @@ def check_subtitles_availability(video_id, proxies=None):
     return {
         "available": False,
         "lang": None,
-        "type": None,
-        "transcript_obj": None
+        "type": None
     }
 
 def download_and_clean_subtitles(video_id, transcript_meta, proxies=None):
     """Download existing subtitles and merge timestamps into a clean text block."""
     try:
-        t_obj = transcript_meta.get("transcript_obj")
-        lang_code = t_obj.language_code if t_obj else 'th'
-        # Pass proxies to get_transcript
-        data = YouTubeTranscriptApi.get_transcript(video_id, languages=[lang_code, 'th', 'en'], proxies=proxies)
+        lang_code = transcript_meta.get("lang") or 'th'
+        
+        session = requests.Session()
+        if proxies:
+            session.proxies = proxies
+        api = YouTubeTranscriptApi(http_client=session)
+        
+        # Retrieve and fetch
+        data = api.list(video_id).find_transcript([lang_code, 'th', 'en']).fetch()
             
         # Merge subtitle rows
         lines = []
         for entry in data:
-            text = entry.get("text", "").strip()
+            if hasattr(entry, 'text'):
+                text = entry.text.strip() if entry.text else ""
+            elif isinstance(entry, dict):
+                text = entry.get("text", "").strip()
+            else:
+                text = ""
+                
             if text:
                 # Remove common subtitle music tokens like [Music] or (Laughter)
                 text = re.sub(r'\[.*?\]|\(.*?\)', '', text).strip()
