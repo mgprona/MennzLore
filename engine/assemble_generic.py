@@ -315,7 +315,7 @@ def build_map_prompt_section(project_dir, prefix):
     lines.append("")
     return "\n".join(lines)
 
-def assemble_lorebook(project_dir, prefix):
+def assemble_lorebook(project_dir, prefix, prior_lore_context: str = None):
     PROJECT = project_dir.rstrip("/\\")
     PREFIX = prefix
     MF_DIR = os.path.join(PROJECT, "micro_facts")
@@ -768,6 +768,8 @@ def assemble_lorebook(project_dir, prefix):
                       for ep in all_eps if os.path.exists(os.path.join(MF_DIR, mf_files[ep])))
     full = []
     full.append(build_metadata_block(PREFIX, global_lore, all_eps, total_chars))
+    if prior_lore_context:
+        full.append(f"# Prior Lore Context\n\n{prior_lore_context}")
     full.append(build_toc(all_eps, len(all_chars), len(all_locs), len(all_concepts), bool(char_visuals)))
     full.append(build_name_map_table(name_map, all_chars))
     full.append(build_timeline_table(all_eps, p1data, p2batches))

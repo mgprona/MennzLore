@@ -19,7 +19,7 @@ class LocalVectorMemory:
         self.idf = {}
         self.tf_vectors = []
 
-    def load_project_facts(self, project_dir, prefix):
+    def load_project_facts(self, project_dir, prefix, volume_label: str = None):
         self.documents = []
         mf_dir = os.path.join(project_dir, "micro_facts")
         if not os.path.isdir(mf_dir):
@@ -27,6 +27,8 @@ class LocalVectorMemory:
             
         if not os.path.isdir(mf_dir):
             return
+            
+        meta_extra = {"volume": volume_label} if volume_label else {}
             
         pattern = os.path.join(mf_dir, f"{prefix}_EP*_micro_facts.json")
         for fpath in sorted(glob.glob(pattern)):
@@ -41,35 +43,35 @@ class LocalVectorMemory:
                 for kpp in data.get("key_plot_points", []):
                     self.add_document(
                         text=f"Episode {ep_id}: {kpp.get('description')}",
-                        metadata={"type": "plot_point", "ep": ep_id, "id": kpp.get("point_id")}
+                        metadata={"type": "plot_point", "ep": ep_id, "id": kpp.get("point_id"), **meta_extra}
                     )
                     
                 # 2. Index character behaviors
                 for beh in data.get("character_behaviors", []):
                     self.add_document(
                         text=f"Character {beh.get('character')} in Episode {ep_id} scene {beh.get('in_scene_id')}: {beh.get('behavior')}",
-                        metadata={"type": "behavior", "ep": ep_id, "character": beh.get("character")}
+                        metadata={"type": "behavior", "ep": ep_id, "character": beh.get("character"), **meta_extra}
                     )
                     
                 # 3. Index items of interest
                 for item in data.get("items_of_interest", []):
                     self.add_document(
                         text=f"Item '{item.get('item')}' in Episode {ep_id}: {item.get('description')} (Role: {item.get('role_in_chapter')})",
-                        metadata={"type": "item", "ep": ep_id, "item": item.get("item")}
+                        metadata={"type": "item", "ep": ep_id, "item": item.get("item"), **meta_extra}
                     )
                     
                 # 4. Index dialogue summaries
                 for dlg in data.get("dialogue_summaries", []):
                     self.add_document(
                         text=f"Dialogue between {', '.join(dlg.get('participants', []))} in Episode {ep_id} regarding '{dlg.get('topic')}': {dlg.get('summary')}",
-                        metadata={"type": "dialogue", "ep": ep_id, "topic": dlg.get("topic")}
+                        metadata={"type": "dialogue", "ep": ep_id, "topic": dlg.get("topic"), **meta_extra}
                     )
                     
                 # 5. Index lore discoveries
                 for disc in data.get("lore_discoveries", []):
                     self.add_document(
                         text=f"Lore Discovery in Episode {ep_id}: {disc.get('description')} (Evidence: \"{disc.get('evidence_quote')}\")",
-                        metadata={"type": "discovery", "ep": ep_id, "id": disc.get("discovery_id")}
+                        metadata={"type": "discovery", "ep": ep_id, "id": disc.get("discovery_id"), **meta_extra}
                     )
             except Exception as e:
                 print(f"Warning: Failed to index facts from {fpath}: {e}")
