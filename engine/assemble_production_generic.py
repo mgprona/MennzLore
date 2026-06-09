@@ -18,6 +18,13 @@ try:
 except ImportError:
     from utils import build_variant_lookup, normalize_name, load_json, write_json
 
+try:
+    from engine.phase3_global_lore import _unwrap_xml_arrays
+except ImportError:
+    # Standalone import path (when run as a script)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from phase3_global_lore import _unwrap_xml_arrays
+
 # ─── CONFIG ──────────────────────────────────────────
 ASPECT_RATIOS = {"wide": "16:9", "portrait": "9:16", "square": "1:1", "cinematic": "21:9"}
 
@@ -125,8 +132,17 @@ def infer_art_style(genre_list, title):
 
 
 def infer_era_setting(metadata):
-    """Build a generic era/setting note from metadata."""
-    genre = " ".join(metadata.get("genre", [])).lower()
+    """Build a generic era/setting note from metadata.
+
+    Unwraps any ``{"item": ...}`` array wrappers from ``genre`` before
+    processing, since the MCP/JSON-RPC layer sometimes wraps the value
+    on the wire. Without this, ``metadata["genre"]`` could be a dict
+    (e.g. ``{"item": ["detective fiction", "mystery"]}``) and the slice
+    ``[:3]`` would raise ``TypeError: unhashable type: 'slice'`` (Bug #7).
+    """
+    metadata = _unwrap_xml_arrays(metadata)
+    genre_list = _unwrap_xml_arrays(metadata.get("genre", []))
+    genre = " ".join(genre_list).lower()
     series = metadata.get("series_context", "")
     if any(w in genre for w in ["science fiction", "space", "planetary", "galactic"]):
         era = "Spacefaring future"

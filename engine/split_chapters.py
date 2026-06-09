@@ -54,9 +54,10 @@ _INLINE_ANNOTATION = re.compile(
     re.I,
 )
 # Footer block heading: from this line to end-of-file is the transcriber's
-# typo-correction log, which is also non-narrative.
+# typo-correction log, which is also non-narrative. Match optional
+# apostrophe (some files use "Transcribers" without it) and optional colon.
 _TRANSCRIBER_FOOTER = re.compile(
-    r'^\s*transcriber(?:\'s)?\s+changes\s*:?\s*$',
+    r'^\s*transcriber(?:s|\'s|s)?\s+changes\s*:?\s*$',
     re.I,
 )
 
@@ -92,7 +93,7 @@ def _is_heading(lines: list[str], i: int) -> bool:
     # actual episode. Without this guard, books like A Study in Scarlet (PG
     # #244) would produce empty/header-only files for EP001 ("PART I") and
     # EP009 ("PART II"), pushing the real chapter numbering off by one.
-    if re.match(r'^\s*part\s+[ivxlcdm]+\.?\s*$', line, re.I):
+    if re.match(r'^\s*part\s+[ivxlcdm]+\.?\b', line, re.I):
         return False
     # require blank lines on both sides (prevents false positives mid-prose)
     before = lines[i - 1].strip() if i > 0 else ""

@@ -320,9 +320,17 @@ def save_global_lore(project_dir: str, global_lore: dict, name_map: dict,
     try:
         if not prefix:
             prefix = os.path.basename(project_dir.rstrip("/\\"))
+        # Unwrap any {"item": ...} envelopes on the four top-level objects BEFORE
+        # the engine sees them. The MCP/JSON-RPC + Pydantic stack sometimes wraps
+        # arrays in {"item": <value>}, and write_global_lore_outputs already
+        # handles that, but doing it here means downstream engines that read the
+        # raw dict (e.g. phase3_auto_verify) also see clean data.
+        # NOTE: write_global_lore_outputs() calls _unwrap_xml_arrays() on its
+        # inputs, so this defensive unwrap is belt-and-braces. Harmless if the
+        # input is already plain.
         result = {
-            "global_lore": global_lore,
-            "name_map": name_map,
+            "global_lore":        global_lore,
+            "name_map":           name_map,
             "timeline_framework": timeline_framework,
             "chapter_appearance": chapter_appearance,
         }

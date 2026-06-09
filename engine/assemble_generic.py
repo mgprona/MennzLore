@@ -359,8 +359,14 @@ def assemble_lorebook(project_dir, prefix, prior_lore_context: str = None):
     
     all_eps = sorted(mf_files.keys())
     if not all_eps:
-        print("No micro_facts files found")
-        sys.exit(1)
+        # Raise instead of sys.exit(1) so the MCP tool wrapper sees a normal
+        # exception and returns a fast [ERROR] message. Calling sys.exit()
+        # inside an MCP tool would propagate a SystemExit that the wrapper
+        # does not catch, causing the call to spin until the MCP timeout.
+        raise FileNotFoundError(
+            f"No micro_facts files found in {MF_DIR}. Run Phase 4 (3-Pass "
+            f"analysis + merge) before Phase 7 (assemble)."
+        )
     print(f"Found: {len(all_eps)} micro_facts, {len(p2_files)} pass2 batches")
     
     p1data = {}
