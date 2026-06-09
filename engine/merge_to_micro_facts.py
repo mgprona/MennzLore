@@ -16,12 +16,15 @@ import json
 import re
 from difflib import SequenceMatcher
 
-from lore_models import MicroFactsFinal
+# Ensure engine/ is importable whether run via MCP or standalone
+_ENGINE_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.dirname(_ENGINE_DIR)
+for _d in (_REPO_ROOT, _ENGINE_DIR):
+    if _d not in sys.path:
+        sys.path.insert(0, _d)
 
-try:
-    from engine.utils import load_json, write_json
-except ImportError:
-    from utils import load_json, write_json
+from lore_models import MicroFactsFinal
+from engine.utils import load_json, write_json
 
 
 def self_correct_micro_facts(merged: dict) -> dict:

@@ -8,10 +8,14 @@ import os, sys, json, re
 from datetime import datetime
 from collections import defaultdict
 
-try:
-    from engine.utils import build_variant_lookup, normalize_name, normalize_location, load_json
-except ImportError:
-    from utils import build_variant_lookup, normalize_name, normalize_location, load_json
+# Ensure engine/ is importable whether run via MCP or standalone
+_ENGINE_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.dirname(_ENGINE_DIR)
+for _d in (_REPO_ROOT, _ENGINE_DIR):
+    if _d not in sys.path:
+        sys.path.insert(0, _d)
+
+from engine.utils import build_variant_lookup, normalize_name, normalize_location, load_json
 
 def build_metadata_block(prefix, global_lore, all_eps, total_chars=0):
     meta = global_lore.get("book_metadata", {}) if global_lore else {}
