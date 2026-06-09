@@ -44,10 +44,29 @@ def _load_clean_texts(project_dir: str, prefix: str) -> dict[str, str]:
     return result
 
 
-def _check_name_in_texts(name: str, aliases: list[str], texts: dict[str, str]) -> list[str]:
+def _as_list(value) -> list:
+    """Coerce a value into a list of strings.
+
+    Defensive against LLM output that may produce either a single string
+    ("EP001") or a list (["EP001"]) for fields like ``aliases`` and
+    ``episodes``. The MCP ``{"item": ...}`` unwrap can also collapse a
+    one-element list into a bare string. Without this guard, the strict
+    ``list + list`` concatenation in ``_check_name_in_texts`` raises
+    ``TypeError: can only concatenate list (not "str") to list``.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [str(x) for x in value if x is not None]
+    return [str(value)]
+
+
+def _check_name_in_texts(name: str, aliases, texts: dict[str, str]) -> list[str]:
     """Return list of ep_ids where canonical name OR any alias appears."""
     found = []
-    terms = [name] + aliases
+    terms = [name] + _as_list(aliases)
     for ep_id, text in texts.items():
         for term in terms:
             if term and re.search(re.escape(term), text, re.IGNORECASE):
@@ -96,7 +115,7 @@ def run_auto_verify(project_dir: str, prefix: str) -> dict:
     # ── check 4: name_map episodes declared vs actually found in text ─────────
     not_found_in_declared = []
     for canonical, data in name_map.items():
-        declared_eps = set(data.get("episodes", []))
+        declared_eps = set(_as_list(data.get("episodes", [])))
         aliases = data.get("aliases", [])
         found_eps = set(_check_name_in_texts(canonical, aliases, texts))
         # flag entries where declared episodes have ZERO hits at all
