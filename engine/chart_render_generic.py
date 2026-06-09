@@ -2,7 +2,7 @@
 """
 Phase 10 — Chart Render (GENERIC v1.0)
 =======================================
-Processes spatial location data, determines geography, calculates character 
+Processes spatial location data, determines geography, calculates character
 travel routes, and renders the fictional/real-world map skeleton as an SVG.
 """
 import json
@@ -54,7 +54,7 @@ def haversine_km(lat1, lon1, lat2, lon2):
     a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
 
-def to_nm(km): 
+def to_nm(km):
     return km / 1.852
 
 def latlon_to_xy(lat, lon, clat, clon, scale, W, H):
@@ -66,21 +66,21 @@ def on_canvas(x, y, W, H, margin=60):
 
 def terrain_from_name(name):
     n = name.lower()
-    if any(w in n for w in ["mountain","peak","hill","mount","slope","ledge","cliff","spire","rock"]): 
+    if any(w in n for w in ["mountain","peak","hill","mount","slope","ledge","cliff","spire","rock"]):
         return "mountain_peak"
-    if any(w in n for w in ["river","stream","water","lake","falls","crater lake"]): 
+    if any(w in n for w in ["river","stream","water","lake","falls","crater lake"]):
         return "river_cliff"
-    if any(w in n for w in ["forest","wood","grove","tree","jungle"]): 
+    if any(w in n for w in ["forest","wood","grove","tree","jungle"]):
         return "forest"
-    if any(w in n for w in ["sea","coast","ocean","bay","island","shore","beach","reed","mud flat"]): 
+    if any(w in n for w in ["sea","coast","ocean","bay","island","shore","beach","reed","mud flat"]):
         return "coastal"
-    if any(w in n for w in ["town","village","city","keep","castle","hall","temple","house","street","road","square","lane","palace","fortress","camp","spaceport","cabin","armory","terrace","parapet"]): 
+    if any(w in n for w in ["town","village","city","keep","castle","hall","temple","house","street","road","square","lane","palace","fortress","camp","spaceport","cabin","armory","terrace","parapet"]):
         return "settlement"
-    if any(w in n for w in ["valley","field","plain","meadow"]): 
+    if any(w in n for w in ["valley","field","plain","meadow"]):
         return "farmland_valley"
-    if any(w in n for w in ["marsh","swamp","bog","fen","bogland"]): 
+    if any(w in n for w in ["marsh","swamp","bog","fen","bogland"]):
         return "marsh_hills"
-    if any(w in n for w in ["cave","cavern","mine"]): 
+    if any(w in n for w in ["cave","cavern","mine"]):
         return "underground"
     return "default"
 
@@ -94,10 +94,10 @@ def generate_svg(meta, locations, routes):
     n_real = meta.get("n_real", 0)
     n_total = meta.get("n_total", 0)
     svg = []
-    
-    def a(s): 
+
+    def a(s):
         svg.append(s)
-        
+
     a('<?xml version="1.0" encoding="UTF-8"?>')
     a('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700" width="100%" height="100%">')
     a('  <metadata>')
@@ -154,13 +154,13 @@ def generate_svg(meta, locations, routes):
     for name, loc in sorted(locations.items()):
         coords = loc.get("coordinates")
         canvas_pos = loc.get("canvas_pos")
-        if canvas_pos: 
+        if canvas_pos:
             x, y = canvas_pos
-        elif coords: 
+        elif coords:
             x, y = latlon_to_xy(coords[0], coords[1], clat, clon, scale, W, H)
-        else: 
+        else:
             continue
-        if not on_canvas(x, y, W, H): 
+        if not on_canvas(x, y, W, H):
             continue
         placed[name] = (x, y)
         lid = loc.get("id", "?")
@@ -175,10 +175,10 @@ def generate_svg(meta, locations, routes):
     drawn = set()
     for r in routes[:20]:
         frm, to = r["from"], r["to"]
-        if frm not in placed or to not in placed: 
+        if frm not in placed or to not in placed:
             continue
         key = tuple(sorted([frm, to]))
-        if key in drawn: 
+        if key in drawn:
             continue
         drawn.add(key)
         x1, y1 = placed[frm]
@@ -293,7 +293,7 @@ def build_chart(project_dir, prefix):
 
     placed_f = {}
     for name, loc in sorted(geo_data.items()):
-        if loc.get("coordinates"): 
+        if loc.get("coordinates"):
             continue
         t = loc.get("terrain", "default")
         zone = FANTASY_ZONES.get(t, FANTASY_ZONES["default"])
@@ -315,7 +315,7 @@ def build_chart(project_dir, prefix):
     prev_locs = []
     for ep in eps_ordered:
         cands = glob.glob(os.path.join(mf_dir, f"{prefix}_EP{ep}_micro_facts.json"))
-        if not cands: 
+        if not cands:
             continue
         with open(cands[0], encoding="utf-8") as fh:
             data = json.load(fh)
@@ -382,22 +382,27 @@ def build_chart(project_dir, prefix):
     loc_names = list(geo_data.keys())
     top_locs = loc_names[:6]
     locs_list_str = ", ".join(top_locs)
-    
+
+    # BUG #9 fix: removed hardcoded "Welsh" calligraphic text labels — they
+    # are completely irrelevant to novels that are not set in Wales
+    # (e.g. The Mind Master is set in 1930s New York). Replaced with
+    # genre-agnostic phrasing so the prompt is correct for any setting.
     map_prompt_midjourney = (
         f"A beautiful fantasy map of the world of '{novel_name}' by {author}. "
         f"Antique cartography style, old aged vintage parchment paper, sepia ink, hand-drawn map. "
         f"Features key locations including: {locs_list_str}. "
         f"Illustrations of mountains, rivers, forests, and old castles. Compass rose at the corner. "
-        f"Welsh calligraphic text labels, ornate border decoration, highly detailed, historical look, masterpiece, --ar 16:9"
+        f"Hand-lettered calligraphic text labels in the style appropriate to the setting, "
+        f"ornate border decoration, highly detailed, historical look, masterpiece, --ar 16:9"
     )
-    
+
     map_prompt_stable_diffusion = (
         f"Fantasy map, cartography, hand-drawn map of '{novel_name}', antique style, "
         f"aged yellow parchment, sepia ink illustration, calligraphy labeling {locs_list_str}, "
         f"highly detailed fantasy geography, mountain peaks, rivers, forests, vintage compass rose, "
         f"high resolution, masterpiece."
     )
-    
+
     prompt_data = {
         "project": prefix,
         "novel": novel_name,
@@ -406,11 +411,11 @@ def build_chart(project_dir, prefix):
         "prompt_midjourney": map_prompt_midjourney,
         "prompt_stable_diffusion": map_prompt_stable_diffusion
     }
-    
+
     with open(os.path.join(output_dir, "map_image_prompt.json"), "w", encoding="utf-8") as f:
         json.dump(prompt_data, f, ensure_ascii=False, indent=2)
     print("  map_image_prompt.json")
-    
+
     with open(os.path.join(output_dir, "map_image_prompt.txt"), "w", encoding="utf-8") as f:
         f.write(map_prompt_midjourney)
     print("  map_image_prompt.txt")
