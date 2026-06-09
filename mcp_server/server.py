@@ -24,6 +24,8 @@ from engine.assemble_production_generic import build_production
 from engine.chart_render_generic import build_chart
 from engine.verify_names import verify_names
 from engine.rag_memory import query_past_lore
+from engine.relationship_graph import render_relationships
+from engine.hybrid_notes import generate_hybrid_notes
 from engine.image_generator import generate_storyboard
 from engine.youtube_acquire import analyze_playlist_transcripts, run_playlist_acquisition, get_working_proxy_pool
 import subprocess
@@ -42,7 +44,7 @@ def read_repo_file(rel_path: str) -> str:
 # ─── TOOLS ──────────────────────────────────────────────────────────────────
 
 @mcp.tool()
-def verify_character_names(project_dir: str, prefix: str = "", **kwargs) -> dict:
+def verify_character_names(project_dir: str, prefix: str = "") -> dict:
     """
     Phase 3.2: Verify name consistency. Cross-references the name map JSON 
     with raw or clean text files, identifying characters that do not appear in the text.
@@ -57,7 +59,7 @@ def verify_character_names(project_dir: str, prefix: str = "", **kwargs) -> dict
         return {"status": "error", "message": str(e)}
 
 @mcp.tool()
-async def merge_micro_facts(prefix: str, ep_num: str, base_dir: str = ".", **kwargs) -> str:
+async def merge_micro_facts(prefix: str, ep_num: str, base_dir: str = ".") -> str:
     """
     Phase 4: Merge and validate the 3-pass JSON outputs (architect, profiler, chronicler) for a specific episode.
     
@@ -75,7 +77,7 @@ async def merge_micro_facts(prefix: str, ep_num: str, base_dir: str = ".", **kwa
         return f"[ERROR] Failed to merge: {e}"
 
 @mcp.tool()
-def assemble_lorebook_tool(project_dir: str, prefix: str = "", **kwargs) -> str:
+def assemble_lorebook_tool(project_dir: str, prefix: str = "") -> str:
     """
     Phase 7: Assemble all intermediate episode outputs into a master lorebook Markdown file.
     
@@ -92,7 +94,7 @@ def assemble_lorebook_tool(project_dir: str, prefix: str = "", **kwargs) -> str:
         return f"[ERROR] Failed to assemble lorebook: {e}"
 
 @mcp.tool()
-def render_production_tool(project_dir: str, prefix: str = "", **kwargs) -> str:
+def render_production_tool(project_dir: str, prefix: str = "") -> str:
     """
     Phase 9: Process characters and micro-facts into cinematography lists, visual style guides, and image prompts.
     
@@ -110,7 +112,7 @@ def render_production_tool(project_dir: str, prefix: str = "", **kwargs) -> str:
         return f"[ERROR] Failed to render production: {e}"
 
 @mcp.tool()
-def render_map_tool(project_dir: str, prefix: str = "", **kwargs) -> str:
+def render_map_tool(project_dir: str, prefix: str = "") -> str:
     """
     Phase 10: Process locations from micro-facts, project coordinates, and draw route maps as SVG.
     
@@ -128,7 +130,7 @@ def render_map_tool(project_dir: str, prefix: str = "", **kwargs) -> str:
         return f"[ERROR] Failed to render map: {e}"
 
 @mcp.tool()
-def open_dashboard_tool(**kwargs) -> str:
+def open_dashboard_tool() -> str:
     """
     Launch the interactive world explorer web dashboard on http://localhost:8000.
     Checks if the port is already open before starting the server.
@@ -149,7 +151,7 @@ def open_dashboard_tool(**kwargs) -> str:
         return f"[ERROR] Failed to start dashboard server: {e}"
 
 @mcp.tool()
-def query_past_lore_tool(project_dir: str, prefix: str, query: str, limit: int = 5, **kwargs) -> list:
+def query_past_lore_tool(project_dir: str, prefix: str, query: str, limit: int = 5) -> list:
     """
     Search past episodes' micro-facts for relevant background context (Local RAG Memory).
     
@@ -166,7 +168,45 @@ def query_past_lore_tool(project_dir: str, prefix: str, query: str, limit: int =
         return [f"[ERROR] Failed to query RAG: {e}"]
 
 @mcp.tool()
-def generate_storyboard_tool(project_dir: str, prefix: str, approved_scenes: list, model_id: str = "google/gemini-2.5-flash-image", **kwargs) -> str:
+def render_relationships_tool(project_dir: str, prefix: str = "") -> dict:
+    """
+    Phase 11 (NEW): Build and render a force-directed character/location/entity
+    relationship graph from micro_facts data. Outputs SVG, GEXF, and JSON.
+    
+    Args:
+        project_dir: Path to the project directory containing micro_facts/.
+        prefix: Project prefix (auto-detected if empty).
+    """
+    try:
+        if not prefix:
+            prefix = os.path.basename(project_dir.rstrip("/\\"))
+        result = render_relationships(project_dir, prefix)
+        return result
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+def generate_hybrid_notes_tool(project_dir: str, prefix: str = "") -> dict:
+    """
+    Phase 12 (NEW): Generate structured per-entity hybrid notes with sections:
+    [CONTEXT] [FACTS] [BEHAVIOR] [GAPS] [EVIDENCE]
+    Inspired by LoreGraph's Hybrid Note format. Deterministic assembly from
+    micro_facts — no LLM required.
+    
+    Args:
+        project_dir: Path to the project directory containing micro_facts/.
+        prefix: Project prefix (auto-detected if empty).
+    """
+    try:
+        if not prefix:
+            prefix = os.path.basename(project_dir.rstrip("/\\"))
+        result = generate_hybrid_notes(project_dir, prefix)
+        return result
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+def generate_storyboard_tool(project_dir: str, prefix: str, approved_scenes: list, model_id: str = "google/gemini-2.5-flash-image") -> str:
     """
     Generate storyboard images for approved scenes using OpenRouter.
     Only scenes in the approved_scenes list will be generated to control costs.
@@ -189,7 +229,7 @@ def generate_storyboard_tool(project_dir: str, prefix: str, approved_scenes: lis
         return f"[ERROR] Storyboard generation threw exception: {e}"
 
 @mcp.tool()
-def analyze_youtube_playlist(playlist_url: str, use_proxies: bool = False, **kwargs) -> dict:
+def analyze_youtube_playlist(playlist_url: str, use_proxies: bool = False) -> dict:
     """
     Scan a YouTube playlist or video URL and check subtitle availability
     (manual, auto-generated, or missing).
@@ -221,7 +261,7 @@ def analyze_youtube_playlist(playlist_url: str, use_proxies: bool = False, **kwa
         return {"status": "error", "message": str(e)}
 
 @mcp.tool()
-def run_youtube_acquisition(playlist_url: str, project_dir: str, prefix: str, approved: bool = False, model_id: str = "openai/whisper-large-v3-turbo", use_proxies: bool = False, **kwargs) -> dict:
+def run_youtube_acquisition(playlist_url: str, project_dir: str, prefix: str, approved: bool = False, model_id: str = "openai/whisper-large-v3-turbo", use_proxies: bool = False) -> dict:
     """
     Run full YouTube transcript/STT acquisition.
     Pulls free transcripts or uses Whisper STT via OpenRouter for missing subtitles (if approved).
@@ -240,7 +280,7 @@ def run_youtube_acquisition(playlist_url: str, project_dir: str, prefix: str, ap
         return {"status": "error", "message": str(e)}
 
 @mcp.tool()
-def acquire_by_id(book_id: int, base_dir: str = ".", **kwargs) -> dict:
+def acquire_by_id(book_id: int, base_dir: str = ".") -> dict:
     """
     Phase 1 (by Gutenberg ID): Download a public-domain book by its Gutenberg ID,
     scaffold the project directory, and write provenance. Uses the same download
@@ -259,7 +299,7 @@ def acquire_by_id(book_id: int, base_dir: str = ".", **kwargs) -> dict:
         return {"status": "error", "message": str(e)}
 
 @mcp.tool()
-def acquire_by_title(title: str, author: str, base_dir: str = ".", **kwargs) -> dict:
+def acquire_by_title(title: str, author: str, base_dir: str = ".") -> dict:
     """
     Phase 1 (recommended): Find a public-domain book by TITLE + AUTHOR via gutendex,
     download its raw text (PG-19 first, Project Gutenberg fallback), scaffold the
@@ -279,7 +319,7 @@ def acquire_by_title(title: str, author: str, base_dir: str = ".", **kwargs) -> 
         return {"status": "error", "message": str(e)}
 
 @mcp.tool()
-def split_into_chapters(project_dir: str, prefix: str = "", **kwargs) -> dict:
+def split_into_chapters(project_dir: str, prefix: str = "") -> dict:
     """
     Phase 2: Strip Gutenberg boilerplate from the raw full-text and split it into
     per-chapter files `clean/<prefix>_EP###.txt`, detecting chapter headings with a
@@ -302,7 +342,7 @@ def split_into_chapters(project_dir: str, prefix: str = "", **kwargs) -> dict:
 @mcp.tool()
 async def save_global_lore(project_dir: str, global_lore: dict, name_map: dict,
                      timeline_framework: dict, chapter_appearance: dict,
-                     prefix: str = "", **kwargs) -> dict:
+                     prefix: str = "") -> dict:
     """
     Phase 3.1 (recommended): Persist the global-lore analysis that YOU (the connected
     AI) produced from the chapter texts. Call the `extract_global_lore` prompt first,
@@ -341,7 +381,7 @@ async def save_global_lore(project_dir: str, global_lore: dict, name_map: dict,
         return {"status": "error", "message": str(e)}
 
 @mcp.tool()
-def run_global_lore(project_dir: str, prefix: str = "", model: str = "gpt-4o", **kwargs) -> dict:
+def run_global_lore(project_dir: str, prefix: str = "", model: str = "gpt-4o") -> dict:
     """
     Phase 3.1 (API fallback): Extract global lore via an EXTERNAL LLM. Use this only
     for headless/CLI runs. When connected to an MCP client, prefer the
@@ -368,7 +408,7 @@ def run_global_lore(project_dir: str, prefix: str = "", model: str = "gpt-4o", *
         return {"status": "error", "message": str(e)}
 
 @mcp.tool()
-def auto_verify_names(project_dir: str, prefix: str = "", **kwargs) -> dict:
+def auto_verify_names(project_dir: str, prefix: str = "") -> dict:
     """
     Phase 3.2: Deterministically cross-reference the generated name_map against the
     clean chapter texts (no LLM). Flags entries declared but never found, ellipsis/
@@ -388,7 +428,7 @@ def auto_verify_names(project_dir: str, prefix: str = "", **kwargs) -> dict:
         return {"status": "error", "message": str(e)}
 
 @mcp.tool()
-def run_saga_assembly(saga_dir: str, **kwargs) -> dict:
+def run_saga_assembly(saga_dir: str) -> dict:
     """
     Saga Mode: Run Saga timeline creation, compile the Master Saga Lorebook,
     and perform the cross-volume consistency audit.
@@ -412,7 +452,7 @@ def run_saga_assembly(saga_dir: str, **kwargs) -> dict:
         return {"status": "error", "message": str(e)}
 
 @mcp.tool()
-def query_saga_rag(saga_dir: str, query: str, limit: int = 5, **kwargs) -> dict:
+def query_saga_rag(saga_dir: str, query: str, limit: int = 5) -> dict:
     """
     Saga Mode: Search across all volumes in a saga using local vector memory (Local RAG).
     
