@@ -5,17 +5,26 @@ Pass 1.4: Merge & Validate (Pydantic V2)
 Reads 3 JSON files (architect, profiler, chronicler) representing 3 analysis passes
 of a single chapter, merges them, validates them against Pydantic models, and writes 
 the final micro_facts JSON.
+
+Phase 1.1 improvement: Evidence tracing — extracts literal quotes from clean chapter
+text for every claim (KeyPlotPoint, CharacterBehavior, CrossChapterConnection,
+LoreDiscovery) and computes match confidence scores.
 """
 import os
 import sys
 import json
+import re
+from difflib import SequenceMatcher
+
+# Ensure engine/ is importable whether run via MCP or standalone
+_ENGINE_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.dirname(_ENGINE_DIR)
+for _d in (_REPO_ROOT, _ENGINE_DIR):
+    if _d not in sys.path:
+        sys.path.insert(0, _d)
 
 from lore_models import MicroFactsFinal
-
-try:
-    from engine.utils import load_json, write_json
-except ImportError:
-    from utils import load_json, write_json
+from engine.utils import load_json, write_json
 
 
 def self_correct_micro_facts(merged: dict) -> dict:
@@ -102,7 +111,115 @@ def self_correct_micro_facts(merged: dict) -> dict:
     return merged
 
 
-def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None):
+def extract_evidence(merged: dict, clean_chapter_path: str | None = None) -> dict:
+    """Extract literal evidence quotes from clean chapter text for every claim.
+    
+    For each evidence-bearing item (KeyPlotPoint, CharacterBehavior, 
+    CrossChapterConnection, LoreDiscovery), attempts to find the literal quote
+    in the clean chapter text using the description as a search anchor.
+    
+    Returns the merged dict with evidence fields populated.
+    """
+    if not clean_chapter_path or not os.path.exists(clean_chapter_path):
+        return merged
+    
+    with open(clean_chapter_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+    full_text = "".join(lines)
+    
+    def find_best_match(description: str, text: str, context_window: int = 30) -> dict | None:
+        """Find the best literal match for a description in text using sliding window."""
+        if not description or len(description) < 10:
+            return None
+        
+        # Tokenize description into keywords for anchor search
+        keywords = [w for w in re.findall(r'\w+', description.lower()) if len(w) > 3]
+        if not keywords:
+            return None
+        
+        # Also extract stems (first 4 chars) for fuzzy matching
+        stems = set()
+        for kw in keywords:
+            stems.add(kw[:4])
+        
+        best_score = 0.0
+        best_start = None
+        best_quote = None
+        
+        # Search each line for keyword or stem matches
+        for i, line in enumerate(lines):
+            line_lower = line.lower()
+            # Match if any keyword is a substring of the line, or any stem matches
+            if any(kw in line_lower for kw in keywords) or \
+               any(stem in line_lower for stem in stems):
+                # Found a candidate — extract a window and compute similarity
+                window_start = max(0, i - context_window // 2)
+                window_end = min(len(lines), i + context_window // 2 + 1)
+                window_text = "".join(lines[window_start:window_end])
+                
+                # Use SequenceMatcher for fuzzy match
+                score = SequenceMatcher(None, description.lower(), window_text.lower()).ratio()
+                if score > best_score:
+                    best_score = score
+                    best_start = window_start + 1  # 1-based
+                    best_quote = window_text.strip()
+        
+        if best_score >= 0.10 and best_quote:
+            return {
+                "evidence_start_line": best_start,
+                "evidence_end_line": best_start + len(best_quote.split('\n')) - 1,
+                "evidence_quote": best_quote[:500],
+                "match_confidence": round(best_score, 3)
+            }
+        return None
+    
+    # Annotate key_plot_points
+    for kpp in merged.get("key_plot_points", []):
+        if isinstance(kpp, dict):
+            evidence = find_best_match(kpp.get("description", ""), full_text)
+            if evidence:
+                kpp.update(evidence)
+    
+    # Annotate character_behaviors
+    for beh in merged.get("character_behaviors", []):
+        if isinstance(beh, dict):
+            evidence = find_best_match(beh.get("behavior", ""), full_text)
+            if evidence:
+                beh.update(evidence)
+    
+    # Annotate cross_chapter_connections
+    for conn in merged.get("cross_chapter_connections", []):
+        if isinstance(conn, dict):
+            evidence = find_best_match(conn.get("description", ""), full_text)
+            if evidence:
+                conn.update(evidence)
+    
+    # Annotate lore_discoveries — verify existing evidence_quote against source
+    for disc in merged.get("lore_discoveries", []):
+        if isinstance(disc, dict):
+            existing_quote = disc.get("evidence_quote", "")
+            if existing_quote:
+                # Try to locate the existing quote in source text
+                escaped = re.escape(existing_quote[:100])
+                match = re.search(escaped, full_text, re.IGNORECASE)
+                if match:
+                    # Count lines up to match position
+                    text_before = full_text[:match.start()]
+                    line_num = text_before.count('\n') + 1
+                    quote_lines = existing_quote.count('\n') + 1
+                    disc["evidence_start_line"] = line_num
+                    disc["evidence_end_line"] = line_num + quote_lines - 1
+                    disc["match_confidence"] = 0.95  # High confidence for direct match
+                    disc["verification_status"] = "VERIFIED"
+                else:
+                    disc["verification_status"] = "NEEDS_REVIEW"
+                    disc["match_confidence"] = 0.0
+    
+    return merged
+
+
+def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None, 
+                         clean_chapter_path: str | None = None):
     if base_dir is None:
         base_dir = os.getcwd()
 
@@ -157,6 +274,19 @@ def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None):
 
     # Run Self-Correction & Healing Agent
     merged = self_correct_micro_facts(merged)
+
+    # Attempt to derive clean_chapter_path from project structure
+    if clean_chapter_path is None:
+        candidate1 = os.path.join(base_dir, "clean", f"{prefix}_{ep_num}.txt")
+        candidate2 = os.path.join(base_dir, "clean", f"{prefix}_EP{ep_num}.txt" if not ep_num.startswith("EP") else f"{prefix}_{ep_num}.txt")
+        if os.path.exists(candidate1):
+            clean_chapter_path = candidate1
+        elif os.path.exists(candidate2):
+            clean_chapter_path = candidate2
+    
+    # Phase 1.1: Extract evidence quotes from clean chapter text
+    if clean_chapter_path:
+        merged = extract_evidence(merged, clean_chapter_path)
 
     # Validate with Pydantic (raises ValueError on hallucinated scene refs)
     final_model = MicroFactsFinal(**merged)

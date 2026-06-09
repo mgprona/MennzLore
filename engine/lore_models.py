@@ -18,6 +18,11 @@ class KeyPlotPoint(BaseModel):
     description: str = Field(..., description="สรุปเหตุการณ์สั้นๆ ว่าเกิดอะไรขึ้น")
     characters_involved: List[str] = Field(..., description="รายชื่อตัวละครที่มีส่วนร่วมในเหตุการณ์นี้")
     in_scene_id: str = Field(..., description="รหัสฉากที่เกิดเหตุการณ์นี้ เช่น SC-001")
+    # ── Evidence Tracing (Phase 1.1 improvement) ──
+    evidence_start_line: Optional[int] = Field(None, description="บรรทัดเริ่มต้นใน source text (1-based)")
+    evidence_end_line: Optional[int] = Field(None, description="บรรทัดสิ้นสุดใน source text (1-based)")
+    evidence_quote: Optional[str] = Field(None, description="ข้อความ literal จาก source text ที่สนับสนุน claim นี้")
+    match_confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="ความมั่นใจในการ match (0.0-1.0)")
 
 
 class SceneDetail(BaseModel):
@@ -47,6 +52,11 @@ class CharacterBehavior(BaseModel):
     behavior: str = Field(..., description="พฤติกรรมหรือการกระทำที่เด่นชัดในฉาก")
     behavior_type: str = Field(..., description="ประเภทพฤติกรรม เช่น speech, action, reaction, thought")
     in_scene_id: str = Field(..., description="ผูกกับรหัสฉากจาก Pass 1.1")
+    # ── Evidence Tracing ──
+    evidence_start_line: Optional[int] = Field(None, description="บรรทัดเริ่มต้นใน source text")
+    evidence_end_line: Optional[int] = Field(None, description="บรรทัดสิ้นสุดใน source text")
+    evidence_quote: Optional[str] = Field(None, description="ข้อความ literal จาก source text")
+    match_confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
 
 
 class ItemOfInterest(BaseModel):
@@ -94,6 +104,11 @@ class CrossChapterConnection(BaseModel):
     connection_type: str = Field(..., description="ความสัมพันธ์ เช่น meeting, reference, rivalry, object_transfer")
     description: str = Field(..., description="อธิบายความเชื่อมโยงหรือการอ้างอิงข้ามตอน")
     in_scene_id: str = Field(..., description="ผูกกับรหัสฉากจาก Pass 1.1")
+    # ── Evidence Tracing ──
+    evidence_start_line: Optional[int] = Field(None)
+    evidence_end_line: Optional[int] = Field(None)
+    evidence_quote: Optional[str] = Field(None)
+    match_confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
 
 
 class LoreDiscovery(BaseModel):
@@ -102,6 +117,11 @@ class LoreDiscovery(BaseModel):
     source: str = Field(..., description="แหล่งที่มาของข้อมูล เช่น Chapter text, Character statement")
     evidence_quote: str = Field(..., description="ข้อความในเนื้อเรื่องที่ใช้เป็นหลักฐานประกอบการค้นพบ")
     in_scene_id: str = Field(..., description="ผูกกับรหัสฉากจาก Pass 1.1")
+    # ── Evidence Tracing (Phase 1.1 improvement) ──
+    evidence_start_line: Optional[int] = Field(None, description="บรรทัดเริ่มต้นของ evidence_quote ใน source text")
+    evidence_end_line: Optional[int] = Field(None, description="บรรทัดสิ้นสุดของ evidence_quote ใน source text")
+    match_confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="ความมั่นใจในการ match (0.0-1.0)")
+    verification_status: Optional[str] = Field("UNVERIFIED", description="VERIFIED | UNVERIFIED | NEEDS_REVIEW")
 
 
 class ChroniclerOutput(BaseModel):

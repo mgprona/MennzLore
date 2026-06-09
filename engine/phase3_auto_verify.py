@@ -146,9 +146,24 @@ def run_auto_verify(project_dir: str, prefix: str) -> dict:
     # character count from global_lore if available
     gl_path = os.path.join(project_dir, "verification", f"{prefix}_global_lore.json")
     global_characters = 0
+    gl_characters_from_disk = 0
     if os.path.exists(gl_path):
         gl = _load_json(gl_path)
-        global_characters = len(gl.get("characters", []))
+        gl_characters_from_disk = len(gl.get("characters", []))
+        global_characters = gl_characters_from_disk
+
+    # ── Phase 3.2 blind spot guard: detect false-PASS when character count
+    # ── is unreasonably low (Pydantic silent corruption, Bug #17).
+    low_character_warning = False
+    MIN_EXPECTED_CHARACTERS = 5
+    if gl_characters_from_disk < MIN_EXPECTED_CHARACTERS and clean_files >= 10:
+        low_character_warning = True
+        errors.append(
+            f"WARNING: global_lore.json has only {gl_characters_from_disk} character(s). "
+            f"A novel with {clean_files} chapters typically has {MIN_EXPECTED_CHARACTERS}+ "
+            f"characters. This may indicate Pydantic silent corruption from list-of-list "
+            f"aliases (Bug #17). Verify the character list manually."
+        )
 
     # timeline entries
     tl_path = os.path.join(project_dir, "verification", f"{prefix}_timeline_framework.json")
@@ -165,6 +180,13 @@ def run_auto_verify(project_dir: str, prefix: str) -> dict:
         chapter_appearance_entries = len(ca.get("chapter_appearance", {}))
 
     status = "PASS" if not errors and not ellipsis_paths and not foreign_script_paths else "FAIL"
+    # ── Phase 3.2 blind spot guard ──
+    # Downgrade low-character warnings to advisory (still show, but don't fail)
+    active_warnings = []
+    if low_character_warning:
+        active_warnings.append(errors.pop())  # move from errors to warnings
+        if status == "FAIL" and not errors:
+            status = "PASS"  # only the warning caused FAIL — revert
 
     report = {
         "status":                    status,
@@ -178,6 +200,7 @@ def run_auto_verify(project_dir: str, prefix: str) -> dict:
         "timeline_entries":          timeline_entries,
         "chapter_appearance_entries": chapter_appearance_entries,
         "errors":                    errors,
+        "warnings":                  active_warnings,
         "ellipsis_paths":            ellipsis_paths,
         "foreign_script_paths":      foreign_script_paths,
         "verdict":                   "Phase 3.1/3.2 usable for Phase 4" if status == "PASS"

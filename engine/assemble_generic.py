@@ -8,10 +8,14 @@ import os, sys, json, re
 from datetime import datetime
 from collections import defaultdict
 
-try:
-    from engine.utils import build_variant_lookup, normalize_name, normalize_location, load_json
-except ImportError:
-    from utils import build_variant_lookup, normalize_name, normalize_location, load_json
+# Ensure engine/ is importable whether run via MCP or standalone
+_ENGINE_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.dirname(_ENGINE_DIR)
+for _d in (_REPO_ROOT, _ENGINE_DIR):
+    if _d not in sys.path:
+        sys.path.insert(0, _d)
+
+from engine.utils import build_variant_lookup, normalize_name, normalize_location, load_json
 
 def build_metadata_block(prefix, global_lore, all_eps, total_chars=0):
     meta = global_lore.get("book_metadata", {}) if global_lore else {}
@@ -112,7 +116,7 @@ def build_world_state_ledger(all_eps, p1data):
 
 def build_name_map_table(name_map, all_chars):
     lines = ["## Character Name Map", ""]
-    chars = name_map.get("characters", {})
+    chars = name_map.get("characters", name_map.get("name_map", {}))
     if not chars:
         lines.append("*(No name map data)*")
         return "\n".join(lines)
@@ -341,8 +345,12 @@ def assemble_lorebook(project_dir, prefix, prior_lore_context: str = None):
     if os.path.exists(nm_path):
         with open(nm_path, encoding="utf-8") as f:
             name_map = json.load(f)
-    title = name_map.get("_meta", {}).get("title", PREFIX)
+    title = name_map.get("_meta", {}).get("title", "")
     author = name_map.get("_meta", {}).get("author", "")
+    if not title and global_lore:
+        title = global_lore.get("book_metadata", {}).get("title", PREFIX)
+    if not author and global_lore:
+        author = global_lore.get("book_metadata", {}).get("author", "")
     variant_lookup = build_variant_lookup(name_map)
     
     mf_files = {}
@@ -481,6 +489,72 @@ def assemble_lorebook(project_dir, prefix, prior_lore_context: str = None):
                     "key_quotes": p4.get("key_quotes", []),
                     "cinematic_tags": p4.get("cinematic_tags", {}),
                 }
+    
+    # Fallback for episodes not covered by pass2 batches (e.g. if pass2 is empty)
+    for ep in all_eps:
+        if ep not in p2data:
+            ep_p1 = p1data.get(ep, {})
+            chars = {}
+            present_chars = set()
+            for c in ep_p1.get("characters_present", []):
+                if isinstance(c, str):
+                    present_chars.add(c.strip())
+                elif isinstance(c, dict):
+                    present_chars.add(c.get("name", "").strip())
+            
+            for cb in ep_p1.get("character_behaviors", []):
+                if isinstance(cb, dict):
+                    cname = cb.get("character", cb.get("name", ""))
+                    if cname: present_chars.add(cname.strip())
+            for cs in ep_p1.get("character_states", []):
+                if isinstance(cs, dict):
+                    cname = cs.get("character", "")
+                    if cname: present_chars.add(cname.strip())
+                    
+            for cname in present_chars:
+                canon = normalize_name(cname, variant_lookup)
+                if canon:
+                    nm_chars = name_map.get("characters", name_map.get("name_map", {}))
+                    char_meta = nm_chars.get(canon, {})
+                    
+                    arc_this = ""
+                    for cs in ep_p1.get("character_states", []):
+                        if isinstance(cs, dict) and normalize_name(cs.get("character", ""), variant_lookup) == canon:
+                            arc_this = cs.get("description", "")
+                            break
+                    
+                    chars[canon] = {
+                        "name": canon,
+                        "role": char_meta.get("importance", "Supporting"),
+                        "arc_this_chapter": arc_this
+                    }
+            
+            setting_entries = []
+            for s in ep_p1.get("scene_details", []):
+                if isinstance(s, dict):
+                    raw_loc = s.get("location", "")
+                    if raw_loc:
+                        setting_entries.append({"location": raw_loc, "description": s.get("description", "")[:200]})
+            
+            essential_lore = []
+            for disc in ep_p1.get("lore_discoveries", []):
+                if isinstance(disc, dict):
+                    desc = disc.get("description", "")
+                    if desc:
+                        essential_lore.append({"concept": desc, "type": "discovery"})
+            
+            p2data[ep] = {
+                "characters": chars,
+                "setting": setting_entries or [{}],
+                "essential_lore": essential_lore,
+                "world_building_elements": [],
+                "emotional_arc": {},
+                "tone": {},
+                "symbolism": [],
+                "themes": [],
+                "key_quotes": [],
+                "cinematic_tags": {},
+            }
     
     print("\n--- Chapter Summaries ---")
     for ep in all_eps:

@@ -13,17 +13,15 @@ import sys
 from datetime import datetime
 from collections import defaultdict
 
-try:
-    from engine.utils import build_variant_lookup, normalize_name, load_json, write_json
-except ImportError:
-    from utils import build_variant_lookup, normalize_name, load_json, write_json
+# Ensure engine/ is importable whether run via MCP or standalone
+_ENGINE_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.dirname(_ENGINE_DIR)
+for _d in (_REPO_ROOT, _ENGINE_DIR):
+    if _d not in sys.path:
+        sys.path.insert(0, _d)
 
-try:
-    from engine.phase3_global_lore import _unwrap_xml_arrays
-except ImportError:
-    # Standalone import path (when run as a script)
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from phase3_global_lore import _unwrap_xml_arrays
+from engine.utils import build_variant_lookup, normalize_name, load_json, write_json
+from engine.phase3_global_lore import _unwrap_xml_arrays
 
 # ─── CONFIG ──────────────────────────────────────────
 ASPECT_RATIOS = {"wide": "16:9", "portrait": "9:16", "square": "1:1", "cinematic": "21:9"}
@@ -319,6 +317,7 @@ def build_production(project_dir, prefix):
     # 1. SCENE INVENTORY & PROMPTS
     print("\n--- Scene Inventory & Prompts ---")
     scenes, prompts = [], []
+    total_scenes_processed = 0
     for ep in eps_ordered:
         data = all_eps[ep]
         chapter_title = data.get("chapter_title", f"EP{ep}")
@@ -340,6 +339,9 @@ def build_production(project_dir, prefix):
         for s_idx, s in enumerate(sds):
             if not isinstance(s, dict):
                 continue
+            total_scenes_processed += 1
+            if total_scenes_processed % 10 == 0:
+                print(f"  Progress: {total_scenes_processed} scenes processed...", flush=True)
             location = s.get("location", "Unknown")
             visual = s.get("visual_details", "")
             mood = s.get("mood", "")
