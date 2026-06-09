@@ -33,6 +33,23 @@ except ImportError:
 _START = re.compile(r'\*{3}\s*START OF THE PROJECT GUTENBERG', re.I)
 _END   = re.compile(r'\*{3}\s*END OF THE PROJECT GUTENBERG', re.I)
 
+# Inline editorial annotations that appear as bracketed lines inside chapters
+# (e.g. "[Sidenote: ...]", "[Illustration: ...]", "[Frontispiece: ...]",
+#        "[Transcriber's note: ...]", "[Translator: ...]"). These are NOT
+# narrative text — they are production/editorial metadata inserted by the
+# Project Gutenberg transcriber. If not stripped, downstream LLM extraction
+# will treat them as in-world facts and contaminate the lorebook.
+_INLINE_ANNOTATION = re.compile(
+    r'^\s*\[(?:sidenote|illustration|frontispiece|footnote|translator|transcriber(?:\'s)?(?:\s+(?:note|change|comment|change[s]?))?)\s*:',
+    re.I,
+)
+# Footer block heading: from this line to end-of-file is the transcriber's
+# typo-correction log, which is also non-narrative.
+_TRANSCRIBER_FOOTER = re.compile(
+    r'^\s*transcriber(?:\'s)?\s+changes\s*:?\s*$',
+    re.I,
+)
+
 # ── chapter heading patterns ─────────────────────────────────────────────────
 
 _HEADING_PATTERNS = [
@@ -80,6 +97,57 @@ def strip_boilerplate(lines: list[str]) -> list[str]:
     return lines
 
 
+def strip_inline_annotations(lines: list[str]) -> list[str]:
+    """Drop Gutenberg editorial annotations that appear inside chapter text.
+
+    Handles two formats produced by Project Gutenberg transcribers:
+      1. Single-line bracketed metadata, e.g. ``[Illustration: ...]``,
+         ``[Sidenote: ...]``, ``[Frontispiece: ...]``. The bracket text may
+         wrap to a continuation line; the line(s) are dropped until the
+         closing ``]``.
+      2. The ``Transcriber's Changes:`` footer block, which is a multi-line
+         typo-correction log that is always at the end of the file. Once
+         detected, the rest of the chapter is dropped.
+
+    Returns the cleaned list with the metadata removed.
+    """
+    out: list[str] = []
+    in_bracket = False
+    in_footer = False
+    for line in lines:
+        if in_footer:
+            # Transcriber's Changes block runs to end of file / end of chapter.
+            continue
+        if _TRANSCRIBER_FOOTER.match(line):
+            in_footer = True
+            continue
+        if in_bracket:
+            # Look for the closing bracket on this or subsequent lines.
+            if "]" in line:
+                in_bracket = False
+                # Keep anything that followed the ']' on the same line —
+                # the bracketed annotation always starts the line.
+                tail = line.split("]", 1)[1].strip()
+                if tail:
+                    out.append(tail)
+            continue
+        if _INLINE_ANNOTATION.match(line):
+            # Multi-line bracket: if this line has no ']', keep dropping until
+            # we see one.
+            if "]" not in line:
+                in_bracket = True
+            else:
+                # Single-line bracket: discard this line entirely. If anything
+                # follows the ']', drop it too (it's still part of the
+                # annotation caption).
+                tail = line.split("]", 1)[1].strip()
+                if tail:
+                    out.append(tail)
+            continue
+        out.append(line)
+    return out
+
+
 # ── clean chapter text ───────────────────────────────────────────────────────
 
 def clean_text(lines: list[str]) -> str:
@@ -108,6 +176,7 @@ def split_chapters(project_dir: str, prefix: str) -> list[dict]:
         raw = f.read()
 
     lines = strip_boilerplate(raw.splitlines())
+    lines = strip_inline_annotations(lines)
 
     # find chapter heading line indices
     heading_indices = [i for i in range(len(lines)) if _is_heading(lines, i)]
