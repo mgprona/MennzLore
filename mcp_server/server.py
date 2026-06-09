@@ -28,6 +28,8 @@ from engine.relationship_graph import render_relationships
 from engine.hybrid_notes import generate_hybrid_notes
 from engine.entity_registry import build_entity_registry
 from engine.knowledge_graph import KnowledgeGraph, load_knowledge_graph
+from engine.timeline_render import render_timeline
+from engine.vector_rag import query_lore_semantic, VectorRAG, VECTOR_RAG_AVAILABLE
 from engine.image_generator import generate_storyboard
 from engine.youtube_acquire import analyze_playlist_transcripts, run_playlist_acquisition, get_working_proxy_pool
 import subprocess
@@ -273,6 +275,46 @@ def query_knowledge_graph(project_dir: str, prefix: str = "",
             result = {"error": f"Unknown action: {action}. Use stats/search/entity/path/neighbors."}
         
         kg.close()
+        return result
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+def render_timeline_tool(project_dir: str, prefix: str = "") -> dict:
+    """
+    Phase 15 (NEW): Render an SVG timeline visualization from timeline_framework
+    and chapter_appearance data. Shows chapter sequence with day markers, character
+    appearance heatmap, and location tracking.
+    
+    Args:
+        project_dir: Path to the project directory.
+        prefix: Project prefix (auto-detected if empty).
+    """
+    try:
+        if not prefix:
+            prefix = os.path.basename(project_dir.rstrip("/\\"))
+        result = render_timeline(project_dir, prefix)
+        return result
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+def query_lore_semantic_tool(project_dir: str, prefix: str, query: str,
+                              limit: int = 5) -> dict:
+    """
+    Phase 16 (NEW): Semantic search over micro_facts using vector embeddings.
+    Uses ChromaDB+sentence-transformers if installed, falls back to TF-IDF.
+    
+    Args:
+        project_dir: Path to the project directory.
+        prefix: Project prefix.
+        query: Natural language search query.
+        limit: Max results to return (default: 5).
+    """
+    try:
+        if not prefix:
+            prefix = os.path.basename(project_dir.rstrip("/\\"))
+        result = query_lore_semantic(project_dir, prefix, query, limit=limit)
         return result
     except Exception as e:
         return {"status": "error", "message": str(e)}
