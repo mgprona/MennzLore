@@ -50,12 +50,17 @@ def _as_list(value) -> list:
     Defensive against LLM output that may produce either a single string
     ("EP001") or a list (["EP001"]) for fields like ``aliases`` and
     ``episodes``. The MCP ``{"item": ...}`` unwrap can also collapse a
-    one-element list into a bare string. Without this guard, the strict
-    ``list + list`` concatenation in ``_check_name_in_texts`` raises
-    ``TypeError: can only concatenate list (not "str") to list``.
+    one-element list into a bare string, so the verify tool has to be
+    defensive.
+
+    Also unwraps a single-key ``{"item": <v>}`` dict into ``<v>`` so the
+    resulting list is clean strings, not raw dict reprs. (This mirrors
+    the engine-level ``_unwrap_xml_arrays`` in phase3_global_lore.py.)
     """
     if value is None:
         return []
+    if isinstance(value, dict) and list(value.keys()) == ["item"]:
+        value = value["item"]   # unwrap and recurse below
     if isinstance(value, str):
         return [value]
     if isinstance(value, list):
@@ -121,7 +126,14 @@ def run_auto_verify(project_dir: str, prefix: str) -> dict:
         # flag entries where declared episodes have ZERO hits at all
         if declared_eps and not found_eps:
             not_found_in_declared.append(canonical)
-            errors.append(f"'{canonical}' declared in {sorted(declared_eps)} but found nowhere in clean texts")
+            # Format the declared-eps as a sorted list of strings (not raw
+            # reprs of possibly-wrapped values). Without _as_list() the
+            # error message would print "{'item': 'EP001'}" instead of
+            # "['EP001']" when the MCP layer wrapped the field.
+            errors.append(
+                f"'{canonical}' declared in {sorted(str(e) for e in declared_eps)} "
+                f"but found nowhere in clean texts"
+            )
 
     # ── stats ─────────────────────────────────────────────────────────────────
     total = len(name_map)
