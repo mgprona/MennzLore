@@ -319,6 +319,7 @@ def build_production(project_dir, prefix):
     # 1. SCENE INVENTORY & PROMPTS
     print("\n--- Scene Inventory & Prompts ---")
     scenes, prompts = [], []
+    total_scenes_processed = 0
     for ep in eps_ordered:
         data = all_eps[ep]
         chapter_title = data.get("chapter_title", f"EP{ep}")
@@ -340,6 +341,9 @@ def build_production(project_dir, prefix):
         for s_idx, s in enumerate(sds):
             if not isinstance(s, dict):
                 continue
+            total_scenes_processed += 1
+            if total_scenes_processed % 10 == 0:
+                print(f"  Progress: {total_scenes_processed} scenes processed...", flush=True)
             location = s.get("location", "Unknown")
             visual = s.get("visual_details", "")
             mood = s.get("mood", "")

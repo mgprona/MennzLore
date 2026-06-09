@@ -219,6 +219,25 @@ def write_global_lore_outputs(project_dir: str, prefix: str, result: dict) -> di
     # lists, not single-key wrapper dicts). See _unwrap_xml_arrays().
     normalised = {k: _unwrap_xml_arrays(v) for k, v in result.items()}
 
+    # ── Bug #17 guard: aliases MUST be flat list[str], never list[list[str]] ──
+    # Pydantic v2 silently coerces list-of-list aliases into {"item": [...]}
+    # single-object wrappers, which cascades to corrupt the parent character
+    # and produce false character counts (global_characters: 1).
+    characters = normalised.get("global_lore", {}).get("characters", [])
+    if isinstance(characters, list):
+        for i, char in enumerate(characters):
+            if isinstance(char, dict):
+                aliases = char.get("aliases", [])
+                if isinstance(aliases, list):
+                    for j, a in enumerate(aliases):
+                        if isinstance(a, list):
+                            raise ValueError(
+                                f"aliases[{j}] for character '{char.get('name', f'#{i}')}' "
+                                f"is a nested list {a}. Aliases must be flat strings, e.g. "
+                                f"[\"Alias1\", \"Alias2\"], NOT [[\"Alias1\", \"Alias2\"]]. "
+                                f"This prevents Pydantic silent corruption (Bug #17)."
+                            )
+
     outputs = {
         "global_lore":        f"{prefix}_global_lore.json",
         "name_map":           f"{prefix}_name_map.json",
