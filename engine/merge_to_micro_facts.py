@@ -3,7 +3,7 @@
 Pass 1.4: Merge & Validate (Pydantic V2)
 =========================================
 Reads 3 JSON files (architect, profiler, chronicler) representing 3 analysis passes
-of a single chapter, merges them, validates them against Pydantic models, and writes 
+of a single chapter, merges them, validates them against Pydantic models, and writes
 the final micro_facts JSON.
 """
 import os
@@ -21,7 +21,7 @@ except ImportError:
 def self_correct_micro_facts(merged: dict) -> dict:
     scenes = merged.get("scene_details", [])
     valid_scene_ids = [s.get("scene_id") for s in scenes if isinstance(s, dict) and s.get("scene_id")]
-    
+
     if not valid_scene_ids:
         valid_scene_ids = ["SC-001"]
         scenes.append({
@@ -40,7 +40,7 @@ def self_correct_micro_facts(merged: dict) -> dict:
         sid_clean = sid.strip().upper()
         if sid_clean in valid_scene_ids:
             return sid_clean
-            
+
         digits = "".join(c for c in sid_clean if c.isdigit())
         if digits:
             num = int(digits)
@@ -49,12 +49,12 @@ def self_correct_micro_facts(merged: dict) -> dict:
                 if vsid_digits and int(vsid_digits) == num:
                     print(f"  [SELF-CORRECTION] Healed scene ID typo: '{sid}' -> '{vsid}'")
                     return vsid
-                    
+
         for s in scenes:
             if str(s.get("order")) == sid_clean:
                 print(f"  [SELF-CORRECTION] Healed scene order reference: '{sid}' -> '{s.get('scene_id')}'")
                 return s.get("scene_id")
-                
+
         print(f"  [SELF-CORRECTION] Scene '{sid}' not found. Falling back to default scene '{valid_scene_ids[0]}'")
         return valid_scene_ids[0]
 
@@ -78,7 +78,7 @@ def self_correct_micro_facts(merged: dict) -> dict:
     if isinstance(present_chars, list):
         cleaned_present = [c.strip() for c in present_chars if isinstance(c, str) and c.strip()]
         merged["characters_present"] = cleaned_present
-        
+
         def normalize_char_name(cname):
             if not cname or not isinstance(cname, str):
                 return cname
@@ -98,7 +98,7 @@ def self_correct_micro_facts(merged: dict) -> dict:
             for item in merged.get(key, []):
                 if isinstance(item, dict) and "character" in item:
                     item["character"] = normalize_char_name(item["character"])
-                    
+
     return merged
 
 
@@ -115,22 +115,23 @@ def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None):
         "chronicler": os.path.join(sa_raw, f"{prefix}_{ep_num}_sa_chronicler.json"),
     }
 
-    errors = []
     loaded = {}
     for role, path in paths.items():
         if not os.path.exists(path):
-            errors.append(f"Missing {role}: {path}")
-            continue
+            # Raise instead of accumulating and calling sys.exit(1) later —
+            # sys.exit() inside an MCP tool propagates SystemExit, which the
+            # MCP tool wrapper does not catch, causing the call to hang
+            # until the MCP timeout. Raising here gives a fast, clear error.
+            raise FileNotFoundError(
+                f"Missing 3-Pass input for {ep_num}: '{role}' not found at "
+                f"{path}. Run the 3-Pass LLM extraction (architect / profiler "
+                f"/ chronicler) before Phase 4 (merge)."
+            )
         try:
             with open(path, "r", encoding="utf-8") as f:
                 loaded[role] = json.load(f)
         except json.JSONDecodeError as e:
-            errors.append(f"Invalid JSON in {role}: {e}")
-
-    if errors:
-        for e in errors:
-            print(f"  [ERROR] {e}")
-        sys.exit(1)
+            raise ValueError(f"Invalid JSON in {role}: {e}") from e
 
     arch = loaded["architect"]
     prof = loaded["profiler"]
@@ -162,7 +163,7 @@ def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None):
 
     os.makedirs(micro_dir, exist_ok=True)
     out_path = os.path.join(micro_dir, f"{prefix}_{ep_num}_micro_facts.json")
-    
+
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(final_model.model_dump_json(indent=2, ensure_ascii=False))
 
@@ -170,7 +171,7 @@ def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None):
     print(f"      Events: {final_model.total_events_count} | Scenes: {final_model.total_scenes_count} | Dialogues: {final_model.total_dialogues_count}")
     print(f"      Chars: {len(final_model.characters_present)} | Behaviors: {len(final_model.character_behaviors)}")
     print(f"      Items: {len(final_model.items_of_interest)} | Connections: {len(final_model.cross_chapter_connections)} | Lore: {len(final_model.lore_discoveries)}")
-    
+
     return final_model
 
 
