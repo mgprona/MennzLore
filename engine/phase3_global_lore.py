@@ -180,13 +180,24 @@ def _unwrap_xml_arrays(obj):
     the MCP tool, so we strip the wrappers once, deterministically, before
     persisting to disk.
 
+    Edge cases handled:
+      - single layer wrap:  ``{"item": [1, 2, 3]}``         -> ``[1, 2, 3]``
+      - double layer wrap:  ``{"item": {"item": [1, 2, 3]}}`` -> ``[1, 2, 3]``
+        (can occur when Pydantic + JsonSchema both wrap)
+      - non-``item`` dicts: passed through unchanged
+      - nested objects: walked recursively
+
     Idempotent: a plain list passes through unchanged.
     """
     if isinstance(obj, dict):
-        # Unwrap {"item": <value>} if and only if the dict has exactly one
-        # key and that key is "item". Anything else is real data.
-        if list(obj.keys()) == ["item"]:
-            return _unwrap_xml_arrays(obj["item"])
+        # While this dict IS an ``item``-only wrapper, keep unwrapping.
+        # The loop handles the double-wrap case (item -> item -> value).
+        while list(obj.keys()) == ["item"]:
+            inner = obj["item"]
+            if not isinstance(inner, dict) or list(inner.keys()) != ["item"]:
+                # Inner is a value (list/scalar) or a non-wrapper dict — stop.
+                return _unwrap_xml_arrays(inner) if isinstance(inner, (list, dict)) else inner
+            obj = inner
         return {k: _unwrap_xml_arrays(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_unwrap_xml_arrays(x) for x in obj]
