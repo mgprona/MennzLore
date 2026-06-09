@@ -166,6 +166,33 @@ def build_global_lore_prompt(project_dir: str, prefix: str) -> str:
 
 # ── output writer (deterministic — shared by both paths) ──────────────────────
 
+def _unwrap_xml_arrays(obj):
+    """Recursively unwrap ``{"item": ...}`` array wrappers.
+
+    The MCP/JSON-RPC layer (and some JsonSchema serializers) wrap array
+    values in a single-key object ``{"item": <value>}`` to preserve array
+    semantics in frameworks that don't distinguish arrays from objects.
+    This is fine for the wire protocol but breaks downstream Python code
+    that does ``for x in data["characters_present"]`` and expects a list.
+
+    The four LLM-extracted artefacts (global_lore, name_map, timeline,
+    chapter_appearance) consistently wrap arrays this way when they reach
+    the MCP tool, so we strip the wrappers once, deterministically, before
+    persisting to disk.
+
+    Idempotent: a plain list passes through unchanged.
+    """
+    if isinstance(obj, dict):
+        # Unwrap {"item": <value>} if and only if the dict has exactly one
+        # key and that key is "item". Anything else is real data.
+        if list(obj.keys()) == ["item"]:
+            return _unwrap_xml_arrays(obj["item"])
+        return {k: _unwrap_xml_arrays(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_unwrap_xml_arrays(x) for x in obj]
+    return obj
+
+
 def write_global_lore_outputs(project_dir: str, prefix: str, result: dict) -> dict:
     """Validate the four top-level keys and write the verification/ JSON files."""
     required = {"global_lore", "name_map", "timeline_framework", "chapter_appearance"}
@@ -176,6 +203,11 @@ def write_global_lore_outputs(project_dir: str, prefix: str, result: dict) -> di
     ver_dir = os.path.join(project_dir, "verification")
     os.makedirs(ver_dir, exist_ok=True)
 
+    # Unwrap any {"item": [...]} arrays that the MCP layer inserted so the
+    # files on disk match the schema the rest of the engine expects (plain
+    # lists, not single-key wrapper dicts). See _unwrap_xml_arrays().
+    normalised = {k: _unwrap_xml_arrays(v) for k, v in result.items()}
+
     outputs = {
         "global_lore":        f"{prefix}_global_lore.json",
         "name_map":           f"{prefix}_name_map.json",
@@ -185,10 +217,10 @@ def write_global_lore_outputs(project_dir: str, prefix: str, result: dict) -> di
     for key, filename in outputs.items():
         out_path = os.path.join(ver_dir, filename)
         with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(result[key], f, ensure_ascii=False, indent=2)
+            json.dump(normalised[key], f, ensure_ascii=False, indent=2)
         print(f"  Wrote: {out_path}")
 
-    nm = result["name_map"].get("name_map", {})
+    nm = normalised["name_map"].get("name_map", {})
     if _HAS_STATE:
         ps = PipelineState(project_dir, prefix)
         ps.set_phase("3_global_lore", "COMPLETE",
@@ -198,10 +230,10 @@ def write_global_lore_outputs(project_dir: str, prefix: str, result: dict) -> di
                      entries=len(nm))
 
     return {
-        "characters":       len(result["global_lore"].get("characters", [])),
+        "characters":       len(normalised["global_lore"].get("characters", [])),
         "name_map_entries": len(nm),
-        "timeline_entries": len(result["timeline_framework"].get("timeline_framework", [])),
-        "chapter_appearance_entries": len(result["chapter_appearance"].get("chapter_appearance", {})),
+        "timeline_entries": len(normalised["timeline_framework"].get("timeline_framework", [])),
+        "chapter_appearance_entries": len(normalised["chapter_appearance"].get("chapter_appearance", {})),
         "outputs":          [f"verification/{v}" for v in outputs.values()],
     }
 

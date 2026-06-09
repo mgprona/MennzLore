@@ -115,22 +115,23 @@ def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None):
         "chronicler": os.path.join(sa_raw, f"{prefix}_{ep_num}_sa_chronicler.json"),
     }
 
-    errors = []
     loaded = {}
     for role, path in paths.items():
         if not os.path.exists(path):
-            errors.append(f"Missing {role}: {path}")
-            continue
+            # Raise instead of accumulating and calling sys.exit(1) later —
+            # sys.exit() inside an MCP tool propagates SystemExit, which the
+            # MCP tool wrapper does not catch, causing the call to hang
+            # until the MCP timeout. Raising here gives a fast, clear error.
+            raise FileNotFoundError(
+                f"Missing 3-Pass input for {ep_num}: '{role}' not found at "
+                f"{path}. Run the 3-Pass LLM extraction (architect / profiler "
+                f"/ chronicler) before Phase 4 (merge)."
+            )
         try:
             with open(path, "r", encoding="utf-8") as f:
                 loaded[role] = json.load(f)
         except json.JSONDecodeError as e:
-            errors.append(f"Invalid JSON in {role}: {e}")
-
-    if errors:
-        for e in errors:
-            print(f"  [ERROR] {e}")
-        sys.exit(1)
+            raise ValueError(f"Invalid JSON in {role}: {e}") from e
 
     arch = loaded["architect"]
     prof = loaded["profiler"]

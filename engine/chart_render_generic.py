@@ -388,7 +388,8 @@ def build_chart(project_dir, prefix):
         f"Antique cartography style, old aged vintage parchment paper, sepia ink, hand-drawn map. "
         f"Features key locations including: {locs_list_str}. "
         f"Illustrations of mountains, rivers, forests, and old castles. Compass rose at the corner. "
-        f"Welsh calligraphic text labels, ornate border decoration, highly detailed, historical look, masterpiece, --ar 16:9"
+        f"Hand-lettered calligraphic text labels in the style appropriate to the setting, "
+        f"ornate border decoration, highly detailed, historical look, masterpiece, --ar 16:9"
     )
     
     map_prompt_stable_diffusion = (
