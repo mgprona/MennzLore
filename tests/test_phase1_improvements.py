@@ -158,7 +158,7 @@ class TestPhase1_2_RelationshipGraph(unittest.TestCase):
         # Use an unambiguous location name with a known keyword
         self.assertEqual(_classify_entity("Dark Forest", {}), "LOCATION")
         self.assertEqual(_classify_entity("The Royal Council", {}), "ORGANIZATION")
-        self.assertEqual(_classify_entity("The Amulet of Power", {}), "ITEM")
+        self.assertEqual(_classify_entity("The Enchanted Sword", {}), "ITEM")
         self.assertEqual(_classify_entity("The Great War", {}), "EVENT")
     
     def test_classify_relation(self):

@@ -26,6 +26,8 @@ from engine.verify_names import verify_names
 from engine.rag_memory import query_past_lore
 from engine.relationship_graph import render_relationships
 from engine.hybrid_notes import generate_hybrid_notes
+from engine.entity_registry import build_entity_registry
+from engine.knowledge_graph import KnowledgeGraph, load_knowledge_graph
 from engine.image_generator import generate_storyboard
 from engine.youtube_acquire import analyze_playlist_transcripts, run_playlist_acquisition, get_working_proxy_pool
 import subprocess
@@ -201,6 +203,76 @@ def generate_hybrid_notes_tool(project_dir: str, prefix: str = "") -> dict:
         if not prefix:
             prefix = os.path.basename(project_dir.rstrip("/\\"))
         result = generate_hybrid_notes(project_dir, prefix)
+        return result
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+def build_entity_registry_tool(project_dir: str, prefix: str = "") -> dict:
+    """
+    Phase 13 (NEW): Build a typed, normalized entity registry from micro_facts.
+    Classifies every entity as CHARACTER, LOCATION, ORGANIZATION, ITEM, EVENT,
+    or CONCEPT. Produces typed relation graph with 9 relation types.
+    
+    Args:
+        project_dir: Path to the project directory containing micro_facts/.
+        prefix: Project prefix (auto-detected if empty).
+    """
+    try:
+        if not prefix:
+            prefix = os.path.basename(project_dir.rstrip("/\\"))
+        result = build_entity_registry(project_dir, prefix)
+        return result
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+def query_knowledge_graph(project_dir: str, prefix: str = "",
+                          action: str = "stats", query: str = "",
+                          from_entity: str = "", to_entity: str = "",
+                          entity_name: str = "", limit: int = 10) -> dict:
+    """
+    Phase 14 (NEW): Query the embedded knowledge graph (SQLite FTS5 + graph).
+    
+    Actions:
+      stats    — Return entity/relation statistics
+      search   — Full-text search across entities and evidence (use 'query' param)
+      entity   — Get full entity profile with all relations (use 'entity_name')
+      path     — Find shortest path between two entities (use 'from_entity', 'to_entity')
+      neighbors — Get directly connected entities (use 'entity_name')
+    
+    Args:
+        project_dir: Path to the project directory.
+        prefix: Project prefix (auto-detected if empty).
+        action: One of stats, search, entity, path, neighbors.
+        query: Search query (for action='search').
+        from_entity: Source entity (for action='path').
+        to_entity: Target entity (for action='path').
+        entity_name: Entity name (for action='entity' or 'neighbors').
+        limit: Max results for search.
+    """
+    try:
+        if not prefix:
+            prefix = os.path.basename(project_dir.rstrip("/\\"))
+        
+        kg = load_knowledge_graph(project_dir, prefix)
+        
+        if action == "stats":
+            result = kg.stats()
+        elif action == "search":
+            result = kg.search(query, limit=limit)
+        elif action == "entity":
+            result = kg.get_entity(entity_name)
+            if result is None:
+                result = {"error": f"Entity '{entity_name}' not found"}
+        elif action == "path":
+            result = kg.find_path(from_entity, to_entity)
+        elif action == "neighbors":
+            result = kg.get_neighbors(entity_name)
+        else:
+            result = {"error": f"Unknown action: {action}. Use stats/search/entity/path/neighbors."}
+        
+        kg.close()
         return result
     except Exception as e:
         return {"status": "error", "message": str(e)}
