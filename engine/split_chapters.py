@@ -35,17 +35,22 @@ _END   = re.compile(r'\*{3}\s*END OF THE PROJECT GUTENBERG', re.I)
 
 # Inline editorial annotations that appear as bracketed lines inside chapters
 # (e.g. "[Sidenote: ...]", "[Illustration: ...]", "[Frontispiece: ...]",
-#        "[Transcriber's note: ...]", "[Translator: ...]"). These are NOT
-# narrative text — they are production/editorial metadata inserted by the
-# Project Gutenberg transcriber. If not stripped, downstream LLM extraction
-# will treat them as in-world facts and contaminate the lorebook.
+#        "[Footnote N: ...]", "[Transcriber's note: ...]", "[Translator: ...]").
+# These are NOT narrative text — they are production/editorial metadata
+# inserted by the Project Gutenberg transcriber. If not stripped, downstream
+# LLM extraction will treat them as in-world facts and contaminate the lorebook.
+#
+# The trailing ":\s*" is intentionally minimal: footnoted entries often have
+# a number after the keyword ("[Footnote 1: ...]"), so the colon is not
+# required to be the very first non-space char after the keyword. The bracket
+# must start the line (anchored ^\s*\[).
 _INLINE_ANNOTATION = re.compile(
     r'^\s*\['
     r'(?:'
     r'sidenote|illustration|frontispiece|footnote|translator'
     r'|transcriber(?:\'s)?(?:\s+(?:note|change|comment|change[s]?))?'
     r')'
-    r'\s*:',
+    r'\b[^]]*?:\s*',
     re.I,
 )
 # Footer block heading: from this line to end-of-file is the transcriber's
@@ -80,6 +85,14 @@ def _is_heading(lines: list[str], i: int) -> bool:
     if not line:
         return False
     if not any(p.match(line) for p in _HEADING_PATTERNS):
+        return False
+    # Part-level headings ("PART I.", "PART II. _The Country of the Saints._")
+    # are NOT chapter breaks. We do not split the book at "PART" boundaries —
+    # they are preludes and the next "CHAPTER" inside the part begins the
+    # actual episode. Without this guard, books like A Study in Scarlet (PG
+    # #244) would produce empty/header-only files for EP001 ("PART I") and
+    # EP009 ("PART II"), pushing the real chapter numbering off by one.
+    if re.match(r'^\s*part\s+[ivxlcdm]+\.?\s*$', line, re.I):
         return False
     # require blank lines on both sides (prevents false positives mid-prose)
     before = lines[i - 1].strip() if i > 0 else ""
