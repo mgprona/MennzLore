@@ -2,9 +2,11 @@
 """
 Pass 1.4: Merge & Validate (Pydantic V2)
 =========================================
-Reads 3 JSON files (architect, profiler, chronicler) representing 3 analysis passes
-of a single chapter, merges them, validates them against Pydantic models, and writes 
-the final micro_facts JSON.
+Reads analysis JSONs and merges them into validated micro_facts JSON.
+
+Adaptive 2/3-Pass (v5.1):
+  - Chapters < 15KB → 2-Pass (SA Combined + SA Lore) — saves ~1 LLM call
+  - Chapters >= 15KB → 3-Pass (Architect + Profiler + Chronicler)
 
 Phase 1.1 improvement: Evidence tracing — extracts literal quotes from clean chapter
 text for every claim (KeyPlotPoint, CharacterBehavior, CrossChapterConnection,
@@ -25,6 +27,8 @@ for _d in (_REPO_ROOT, _ENGINE_DIR):
 
 from lore_models import MicroFactsFinal
 from engine.utils import load_json, write_json
+
+ADAPTIVE_THRESHOLD = 15000  # characters — below this, use 2-Pass (SA Combined)
 
 
 def normalize_sa_json(merged: dict) -> dict:
@@ -284,59 +288,166 @@ def extract_evidence(merged: dict, clean_chapter_path: str | None = None) -> dic
     return merged
 
 
+def _get_chapter_size(base_dir: str, prefix: str, ep_num: str,
+                     clean_chapter_path: str | None = None) -> int | None:
+    """Get chapter size in characters from clean file or pipeline_state."""
+    if clean_chapter_path and os.path.exists(clean_chapter_path):
+        return os.path.getsize(clean_chapter_path)
+
+    candidates = [
+        os.path.join(base_dir, "clean", f"{prefix}_{ep_num}.txt"),
+        os.path.join(base_dir, "clean", f"{prefix}_EP{ep_num}.txt" if not ep_num.startswith("EP") else f"{prefix}_{ep_num}.txt"),
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return os.path.getsize(c)
+
+    state_path = os.path.join(base_dir, f"{prefix}_pipeline_state.json")
+    if os.path.exists(state_path):
+        with open(state_path, encoding="utf-8") as f:
+            state = json.load(f)
+        chapter_chars = state.get("phases", {}).get("2_clean", {}).get("chapter_chars", {})
+        for filename, size in chapter_chars.items():
+            if ep_num in filename:
+                return size
+    return None
+
+
+def _resolve_clean_path(base_dir: str, prefix: str, ep_num: str,
+                        clean_chapter_path: str | None) -> str | None:
+    """Resolve clean chapter text path for evidence extraction."""
+    if clean_chapter_path and os.path.exists(clean_chapter_path):
+        return clean_chapter_path
+    candidates = [
+        os.path.join(base_dir, "clean", f"{prefix}_{ep_num}.txt"),
+        os.path.join(base_dir, "clean", f"{prefix}_EP{ep_num}.txt" if not ep_num.startswith("EP") else f"{prefix}_{ep_num}.txt"),
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return None
+
+
+def _load_json_safe(path: str, role: str) -> dict:
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"Missing input for role '{role}': not found at {path}. "
+            f"Run the LLM extraction before Phase 4 (merge)."
+        )
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in {role}: {e}") from e
+
+
+def _detect_mode_and_load(base_dir: str, prefix: str, ep_num: str,
+                          clean_chapter_path: str | None = None) -> tuple[str, dict]:
+    """Detect 2-pass vs 3-pass and load analysis files.
+
+    Returns (mode_string, loaded_dict_of_files).
+    """
+    sa_raw = os.path.join(base_dir, "analysis", "sa_raw")
+
+    paths_3pass = {
+        "architect":  os.path.join(sa_raw, f"{prefix}_{ep_num}_sa_architect.json"),
+        "profiler":   os.path.join(sa_raw, f"{prefix}_{ep_num}_sa_profiler.json"),
+        "chronicler": os.path.join(sa_raw, f"{prefix}_{ep_num}_sa_chronicler.json"),
+    }
+    paths_2pass = {
+        "sa_combined": os.path.join(sa_raw, f"{prefix}_{ep_num}_sa_combined.json"),
+        "sa_lore":     os.path.join(sa_raw, f"{prefix}_{ep_num}_sa_lore.json"),
+    }
+
+    has_3pass = all(os.path.exists(p) for p in paths_3pass.values())
+    has_2pass = all(os.path.exists(p) for p in paths_2pass.values())
+
+    chapter_size = _get_chapter_size(base_dir, prefix, ep_num, clean_chapter_path)
+    prefer_2pass = chapter_size is not None and chapter_size < ADAPTIVE_THRESHOLD
+
+    # Decide mode
+    if prefer_2pass and has_2pass:
+        mode = "2-PASS"
+    elif not prefer_2pass and has_3pass:
+        mode = "3-PASS"
+    elif has_2pass:
+        mode = "2-PASS"
+    elif has_3pass:
+        mode = "3-PASS"
+    else:
+        missing_3p = [r for r, p in paths_3pass.items() if not os.path.exists(p)]
+        missing_2p = [r for r, p in paths_2pass.items() if not os.path.exists(p)]
+        raise FileNotFoundError(
+            f"No complete analysis input for {ep_num}. "
+            f"Missing 3-Pass: {missing_3p or 'N/A'}. "
+            f"Missing 2-Pass: {missing_2p or 'N/A'}. "
+            f"Run LLM extraction before Phase 4 (merge)."
+        )
+
+    paths_chosen = paths_2pass if mode == "2-PASS" else paths_3pass
+    loaded = {role: _load_json_safe(path, role) for role, path in paths_chosen.items()}
+    return mode, loaded
+
+
+def _build_merged_dict(loaded: dict, ep_num: str, mode: str) -> dict:
+    """Assemble the merged dict from loaded analysis data (works for both modes)."""
+    if mode == "2-PASS":
+        combined = loaded["sa_combined"]
+        lore = loaded["sa_lore"]
+        return {
+            "chapter_id": combined.get("chapter_id", ep_num),
+            "chapter_title": combined.get("chapter_title", ""),
+            "key_plot_points": combined.get("key_plot_points", []),
+            "scene_details": combined.get("scene_details", []),
+            "characters_present": combined.get("characters_present", []),
+            "character_behaviors": combined.get("character_behaviors", []),
+            "items_of_interest": combined.get("items_of_interest", []),
+            "character_states": combined.get("character_states", []),
+            "dialogue_summaries": combined.get("dialogue_summaries", []),
+            "cross_chapter_connections": lore.get("cross_chapter_connections", []),
+            "lore_discoveries": lore.get("lore_discoveries", []),
+            "tags": combined.get("tags", []),
+            "total_events_count": combined.get("total_events_count",
+                len(combined.get("key_plot_points", []))),
+            "total_scenes_count": combined.get("total_scenes_count",
+                len(combined.get("scene_details", []))),
+            "total_dialogues_count": combined.get("total_dialogues_count",
+                len(combined.get("dialogue_summaries", []))),
+        }
+    else:  # 3-PASS
+        arch = loaded["architect"]
+        prof = loaded["profiler"]
+        chron = loaded["chronicler"]
+        return {
+            "chapter_id": arch.get("chapter_id", ep_num),
+            "chapter_title": arch.get("chapter_title", ""),
+            "key_plot_points": arch.get("key_plot_points", []),
+            "scene_details": arch.get("scene_details", []),
+            "characters_present": prof.get("characters_present", []),
+            "character_behaviors": prof.get("character_behaviors", []),
+            "items_of_interest": prof.get("items_of_interest", []),
+            "character_states": prof.get("character_states", []),
+            "dialogue_summaries": prof.get("dialogue_summaries", []),
+            "cross_chapter_connections": chron.get("cross_chapter_connections", []),
+            "lore_discoveries": chron.get("lore_discoveries", []),
+            "tags": [],
+            "total_events_count": len(arch.get("key_plot_points", [])),
+            "total_scenes_count": len(arch.get("scene_details", [])),
+            "total_dialogues_count": len(prof.get("dialogue_summaries", [])),
+        }
+
+
 def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None, 
                          clean_chapter_path: str | None = None):
     if base_dir is None:
         base_dir = os.getcwd()
 
-    sa_raw = os.path.join(base_dir, "analysis", "sa_raw")
     micro_dir = os.path.join(base_dir, "micro_facts")
 
-    paths = {
-        "architect": os.path.join(sa_raw, f"{prefix}_{ep_num}_sa_architect.json"),
-        "profiler": os.path.join(sa_raw, f"{prefix}_{ep_num}_sa_profiler.json"),
-        "chronicler": os.path.join(sa_raw, f"{prefix}_{ep_num}_sa_chronicler.json"),
-    }
+    # Adaptive 2/3-Pass detection + loading
+    mode, loaded = _detect_mode_and_load(base_dir, prefix, ep_num, clean_chapter_path)
 
-    loaded = {}
-    for role, path in paths.items():
-        if not os.path.exists(path):
-            # Raise instead of accumulating and calling sys.exit(1) later —
-            # sys.exit() inside an MCP tool propagates SystemExit, which the
-            # MCP tool wrapper does not catch, causing the call to hang
-            # until the MCP timeout. Raising here gives a fast, clear error.
-            raise FileNotFoundError(
-                f"Missing 3-Pass input for {ep_num}: '{role}' not found at "
-                f"{path}. Run the 3-Pass LLM extraction (architect / profiler "
-                f"/ chronicler) before Phase 4 (merge)."
-            )
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                loaded[role] = json.load(f)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON in {role}: {e}") from e
-
-    arch = loaded["architect"]
-    prof = loaded["profiler"]
-    chron = loaded["chronicler"]
-
-    merged = {
-        "chapter_id": arch.get("chapter_id", ep_num),
-        "chapter_title": arch.get("chapter_title", ""),
-        "key_plot_points": arch.get("key_plot_points", []),
-        "scene_details": arch.get("scene_details", []),
-        "characters_present": prof.get("characters_present", []),
-        "character_behaviors": prof.get("character_behaviors", []),
-        "items_of_interest": prof.get("items_of_interest", []),
-        "character_states": prof.get("character_states", []),
-        "dialogue_summaries": prof.get("dialogue_summaries", []),
-        "cross_chapter_connections": chron.get("cross_chapter_connections", []),
-        "lore_discoveries": chron.get("lore_discoveries", []),
-        "tags": [],
-        "total_events_count": len(arch.get("key_plot_points", [])),
-        "total_scenes_count": len(arch.get("scene_details", [])),
-        "total_dialogues_count": len(prof.get("dialogue_summaries", [])),
-    }
+    merged = _build_merged_dict(loaded, ep_num, mode)
 
     # Run Schema Normalization (Step 0)
     merged = normalize_sa_json(merged)
@@ -344,18 +455,12 @@ def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None,
     # Run Self-Correction & Healing Agent
     merged = self_correct_micro_facts(merged)
 
-    # Attempt to derive clean_chapter_path from project structure
-    if clean_chapter_path is None:
-        candidate1 = os.path.join(base_dir, "clean", f"{prefix}_{ep_num}.txt")
-        candidate2 = os.path.join(base_dir, "clean", f"{prefix}_EP{ep_num}.txt" if not ep_num.startswith("EP") else f"{prefix}_{ep_num}.txt")
-        if os.path.exists(candidate1):
-            clean_chapter_path = candidate1
-        elif os.path.exists(candidate2):
-            clean_chapter_path = candidate2
-    
+    # Resolve clean chapter path for evidence extraction
+    resolved_clean = _resolve_clean_path(base_dir, prefix, ep_num, clean_chapter_path)
+
     # Phase 1.1: Extract evidence quotes from clean chapter text
-    if clean_chapter_path:
-        merged = extract_evidence(merged, clean_chapter_path)
+    if resolved_clean:
+        merged = extract_evidence(merged, resolved_clean)
 
     # Validate with Pydantic (raises ValueError on hallucinated scene refs)
     final_model = MicroFactsFinal(**merged)
@@ -366,7 +471,7 @@ def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None,
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(final_model.model_dump_json(indent=2, ensure_ascii=False))
 
-    print(f"[OK] {ep_num}_micro_facts.json written")
+    print(f"[OK] {ep_num}_micro_facts.json written  ({mode})")
     print(f"      Events: {final_model.total_events_count} | Scenes: {final_model.total_scenes_count} | Dialogues: {final_model.total_dialogues_count}")
     print(f"      Chars: {len(final_model.characters_present)} | Behaviors: {len(final_model.character_behaviors)}")
     print(f"      Items: {len(final_model.items_of_interest)} | Connections: {len(final_model.cross_chapter_connections)} | Lore: {len(final_model.lore_discoveries)}")

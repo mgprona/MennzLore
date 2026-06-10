@@ -32,7 +32,7 @@ class TestMergeFailFast(unittest.TestCase):
             elapsed = time.time() - start
             self.assertLess(elapsed, 2.0, f"Took {elapsed}s, should be <2s")
             # Message should be informative
-            self.assertIn("Missing 3-Pass input", str(ctx.exception))
+            self.assertIn("analysis input", str(ctx.exception))
             self.assertIn("architect", str(ctx.exception))
 
 
