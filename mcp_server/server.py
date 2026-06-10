@@ -930,9 +930,17 @@ def analyze_chronicler(architect_json: str, profiler_json: str, global_lore_exce
 @mcp.prompt()
 def sa_combined(chapter_text: str) -> list[Message]:
     """Get the prompt for SA Combined: direct micro-facts extraction from a single chapter."""
+    import hashlib
     template = read_repo_file("prompts/sa_combined_prompt.md")
+    source_hash = hashlib.sha256(chapter_text.encode("utf-8")).hexdigest()
+    hash_note = (
+        f"\n\n## REQUIRED: _source_hash\n"
+        f'Include this EXACT field in your JSON output:\n'
+        f'"_source_hash": "{source_hash}"\n'
+        f"(This proves you read the actual chapter text — computed from its content)\n"
+    )
     return [
-        Message(template, role="system"),
+        Message(template + hash_note, role="system"),
         Message("## Chapter Text\n\n" + chapter_text, role="user"),
     ]
 

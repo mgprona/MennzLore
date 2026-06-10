@@ -16,6 +16,7 @@ import os
 import sys
 import json
 import re
+import hashlib
 from difflib import SequenceMatcher
 
 # Ensure engine/ is importable whether run via MCP or standalone
@@ -437,6 +438,47 @@ def _build_merged_dict(loaded: dict, ep_num: str, mode: str) -> dict:
         }
 
 
+def _verify_analysis_source(loaded: dict, clean_path: str, ep_num: str) -> None:
+    """Verify analysis JSONs were extracted from the actual chapter text.
+    
+    Computes SHA256 of the clean chapter file and checks that at least one
+    loaded analysis JSON contains a matching `_source_hash` field.
+    
+    - If no JSON has _source_hash: WARN (legacy/handwritten data)
+    - If _source_hash present but mismatches: REJECT (forged data)
+    - If _source_hash matches: pass silently
+    """
+    with open(clean_path, "r", encoding="utf-8") as f:
+        chapter_text = f.read()
+    expected_hash = hashlib.sha256(chapter_text.encode("utf-8")).hexdigest()
+
+    hashes_found = []
+    for role, data in loaded.items():
+        source_hash = data.get("_source_hash")
+        if source_hash:
+            hashes_found.append((role, source_hash))
+
+    if not hashes_found:
+        # Legacy or AI-written data — warn but don't block
+        print(f"  [WARN] {ep_num}: No _source_hash in analysis files. "
+              f"Cannot verify chapter content was actually read by LLM. "
+              f"Analysis may be placeholder/handwritten.")
+        return
+
+    # Check all hashes match
+    for role, h in hashes_found:
+        if h != expected_hash:
+            raise ValueError(
+                f"SOURCE VERIFICATION FAILED for {ep_num}\n"
+                f"  Analysis file '{role}' has _source_hash that does NOT "
+                f"match the actual chapter text at {clean_path}.\n"
+                f"  This means the analysis was NOT produced by an LLM reading "
+                f"this chapter.\n"
+                f"  Fix: use the proper MCP prompts (sa_combined, sa_lore, "
+                f"analyze_chronicler) to extract data from the chapter."
+            )
+
+
 def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None, 
                          clean_chapter_path: str | None = None):
     if base_dir is None:
@@ -444,8 +486,18 @@ def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None,
 
     micro_dir = os.path.join(base_dir, "micro_facts")
 
+    # Resolve clean chapter path early
+    resolved_clean = _resolve_clean_path(base_dir, prefix, ep_num, clean_chapter_path)
+
     # Adaptive 2/3-Pass detection + loading
     mode, loaded = _detect_mode_and_load(base_dir, prefix, ep_num, clean_chapter_path)
+
+    # === SOURCE VERIFICATION ===
+    # Require that at least one analysis JSON contains _source_hash matching
+    # the actual chapter text. Prevents AI from writing placeholder JSONs
+    # without ever reading the chapter content through LLM extraction.
+    if resolved_clean:
+        _verify_analysis_source(loaded, resolved_clean, ep_num)
 
     merged = _build_merged_dict(loaded, ep_num, mode)
 

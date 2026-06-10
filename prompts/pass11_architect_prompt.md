@@ -39,11 +39,13 @@ That's it. Do NOT extract character behaviors, dialogue, or items — those come
       "mood": "The emotional tone (e.g. tense, mysterious, comic)",
       "characters_present_in_scene": ["Character1", "Character2"]
     }
-  ]
+  ],
+  "_source_hash": "a1b2c3d4..."
 }
 ```
 
 ## FIELD RULES
+- **`_source_hash`**: Include the EXACT hash value provided with the chapter text. This proves the extraction came from reading the actual chapter.
 - CHARACTER NAMES: use ONLY the bare character name. **NO** parenthetical qualifiers — NO "(mentioned)", "(deceased)", "(off-screen)", "(alias)", etc.
   ❌ Wrong: "Lord Swanleigh (deceased)" / "Mrs. Herbert / Helen Vaughan (mentioned)"
   ✅ Right: "Lord Swanleigh" / "Mrs. Herbert"

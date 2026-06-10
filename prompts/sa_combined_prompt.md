@@ -41,7 +41,9 @@
   "tags": ["mundane", "philosophical debate", "supernatural introduction"],
   "total_events_count": 3,
   "total_scenes_count": 2,
-  "total_dialogues_count": 2
+  "total_dialogues_count": 2,
+  "_source_hash": "a1b2c3d4..."
+}
 }
 ```
 
@@ -53,6 +55,7 @@
 4. **No null values** — Use `[]` for empty arrays, `""` for empty strings
 5. **Minimum thresholds**: 3+ events, 2+ scenes, 2+ behaviors, 1+ dialogue
 6. **No search_files, no read_file** — Your context IS the chapter text below
+7. **`_source_hash`** — Use the EXACT hash value provided in your prompt instructions (above). This proves you read the actual chapter.
 
 ## Usage
 
