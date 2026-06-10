@@ -7,7 +7,11 @@ exposing tools, prompts, and resources to LLM clients.
 """
 import sys
 import os
+import time
 import asyncio
+import json as _json
+import subprocess
+import socket
 
 # Ensure the repository root and engine directory are in the Python path
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -48,6 +52,58 @@ def _patched_to_mcp(self):
 _fb.Message.__init__ = _patched_message_init
 _fb.Message.to_mcp_prompt_message = _patched_to_mcp
 
+
+# ── Auto-update check (non-blocking, cached 24h) ──────────────────────────
+
+def _check_for_updates():
+    """Warn on stderr if a newer MennzLore version is on GitHub.
+    Cached: only checks once per 24 hours. Non-blocking (<1s).
+    """
+    cache_path = os.path.join(os.path.expanduser("~"), ".mennzlore_update_cache.json")
+    now = _json.loads(_json.dumps({"t": 0})) if not os.path.exists(cache_path) else None
+    if not now:
+        try:
+            with open(cache_path, encoding="utf-8") as f:
+                cache = _json.load(f)
+            last_check = cache.get("checked_at", 0)
+            if time.time() - last_check < 86400:  # 24 hours
+                # Still fresh — reuse cached result
+                if cache.get("update_available"):
+                    print(f"[MennzLore] UPDATE AVAILABLE — run: python install.py --upgrade", file=sys.stderr)
+                return
+        except Exception:
+            pass
+
+    # Refresh: git fetch + compare
+    try:
+        subprocess.run(
+            ["git", "fetch", "origin", "OPTIMIZATION"],
+            cwd=ROOT_DIR, capture_output=True, text=True, timeout=15,
+        )
+        result = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD..origin/OPTIMIZATION"],
+            cwd=ROOT_DIR, capture_output=True, text=True, timeout=10,
+        )
+        behind = int(result.stdout.strip() or "0")
+        cache = {"checked_at": time.time(), "update_available": behind > 0, "commits_behind": behind}
+    except Exception:
+        cache = {"checked_at": time.time(), "update_available": False, "error": "check failed"}
+
+    try:
+        os.makedirs(os.path.dirname(cache_path) or ".", exist_ok=True)
+        with open(cache_path, "w", encoding="utf-8") as f:
+            _json.dump(cache, f)
+    except Exception:
+        pass
+
+    if cache.get("update_available"):
+        print(f"[MennzLore] UPDATE AVAILABLE ({cache['commits_behind']} new commits) — run: python install.py --upgrade", file=sys.stderr)
+
+
+# Run the check at import time (non-blocking, cached)
+_check_for_updates()
+
+
 from engine.merge_to_micro_facts import merge_to_micro_facts
 from engine.assemble_generic import assemble_lorebook
 from engine.assemble_production_generic import build_production
@@ -62,8 +118,6 @@ from engine.timeline_render import render_timeline
 from engine.vector_rag import query_lore_semantic, VectorRAG, VECTOR_RAG_AVAILABLE
 from engine.image_generator import generate_storyboard
 from engine.youtube_acquire import analyze_playlist_transcripts, run_playlist_acquisition, get_working_proxy_pool
-import subprocess
-import socket
 
 
 # Initialize FastMCP Server
