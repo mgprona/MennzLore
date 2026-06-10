@@ -118,6 +118,7 @@ from engine.timeline_render import render_timeline
 from engine.vector_rag import query_lore_semantic, VectorRAG, VECTOR_RAG_AVAILABLE
 from engine.image_generator import generate_storyboard
 from engine.youtube_acquire import analyze_playlist_transcripts, run_playlist_acquisition, get_working_proxy_pool
+from engine.fetch_epub import epub_to_project
 
 
 # Initialize FastMCP Server
@@ -476,6 +477,34 @@ def run_youtube_acquisition(playlist_url: str, project_dir: str, prefix: str, ap
         return run_playlist_acquisition(playlist_url, project_dir, prefix, approved=approved, model_id=model_id, use_proxies=use_proxies)
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+def acquire_epub(epub_path: str, base_dir: str = ".", prefix: str = "",
+                 title: str = "", author: str = "") -> dict:
+    """Phase 1 (EPUB): Import a local .epub file and scaffold the project.
+    
+    Extracts chapter text from the EPUB, writes raw/full.txt, splits into
+    clean/EP*.txt chapters, and writes provenance. Ready for Phase 2+ pipeline.
+
+    Args:
+        epub_path: Absolute path to the .epub file.
+        base_dir: Directory under which the project folder is created (default: cwd).
+        prefix: Project prefix (auto-generated if empty).
+        title: Book title (auto-detected from EPUB metadata if empty).
+        author: Author name (auto-detected from EPUB metadata if empty).
+    Returns:
+        Dict with project_dir, prefix, chapter_count, total_chars.
+    """
+    project_dir = epub_to_project(epub_path, base_dir=base_dir, prefix=prefix,
+                                  title=title, author=author)
+    prefix = prefix or os.path.basename(project_dir.rstrip("/\\"))
+    return {
+        "status": "ok",
+        "project_dir": project_dir,
+        "prefix": prefix,
+        "phase": "1 (EPUB import)",
+        "next": f"split_into_chapters('{project_dir}', '{prefix}') or proceed to Phase 3",
+    }
 
 @mcp.tool()
 def acquire_by_id(book_id: int, base_dir: str = ".") -> dict:
