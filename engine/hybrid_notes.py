@@ -18,6 +18,7 @@ Output: Markdown per entity + JSON registry + index file.
 import os
 import sys
 import json
+import re
 import glob
 from collections import defaultdict, Counter
 from typing import Dict, List, Optional
@@ -431,6 +432,7 @@ def generate_hybrid_notes(project_dir: str, prefix: str = "",
         # Write per-entity Markdown
         md = _render_markdown(note)
         safe_name = entity_name.replace(" ", "_").replace("/", "_").replace("\\", "_")
+        safe_name = re.sub(r'["*:<>?|]', '', safe_name).strip('.')
         md_path = os.path.join(output_dir, f"{safe_name}.md")
         with open(md_path, "w", encoding="utf-8") as f:
             f.write(md)
