@@ -1,6 +1,6 @@
 # MennzLore Token Optimization Plan v2
 
-> **Status:** Draft v2 — revised 2026-06-10  
+> **Status:** Draft v3 — updated with baseline findings 2026-06-10  
 > **Target:** v5.1  
 > **Goal:** ลด token consumption ~50% โดยไม่เสียความสามารถในการ detect disguised names และไม่ลดทอนคุณภาพ micro_facts
 
@@ -265,7 +265,133 @@ Optimization ที่ถูกต้องคือ:
 
 ---
 
-## Implementation Sequence
+## Baseline Findings (2026-06-10)
+
+ก่อน implement optimization — รัน pipeline ปัจจุบันบน 3 นิยาย (Alice #11, Looking-Glass #12, Call of the Wild #215) รวม 31 chapters:
+
+### Token Usage (Real Data)
+
+| Phase | Tokens (approx) | Notes |
+|---|---|---|
+| 3.1 Global Lore | ~0 (manual) | เขียนมือ — ไม่ได้ใช้ LLM extract เต็มรูปแบบ |
+| 4 3-Pass extraction | **~12-15M input** | 31 chapters × subagents via `delegate_task` |
+| 4-P2 Sliding Window | 0 | ไม่ได้รัน (ข้ามไป) |
+| 7 Assemble | 0 | Engine |
+| **Total** | **~12-15M** | DeepSeek V4 Pro |
+
+### 4 ปัญหาที่พบ (Critical for Optimization Design)
+
+#### ปัญหา 1: Subagent Field Name Inconsistency (HIGH)
+
+Subagents ผลิต JSON เนื้อหาดี แต่ใช้ชื่อ field ไม่ตรง Pydantic schema:
+
+| Field | Expected | Actual (จาก subagent) |
+|---|---|---|
+| `scene_details[].order` | integer | **missing** |
+| `dialogue_summaries[].key_quotes` | array | **missing** |
+| `dialogue_summaries[].dialogue_id` | string | ใช้ `speaker`+`listener` แทน |
+| `lore_discoveries[].description` | string | ใช้ `discovery` |
+| `lore_discoveries[].source` | string | ใช้ `revealed_by` |
+| `cross_chapter_connections[].connection_id` | string | ใช้ `connection` |
+
+**Impact:** 12/31 chapters merge FAIL ก่อน repair → ต้องเขียน repair script (~60 บรรทัด) แปลง field names
+
+**Root Cause:** Subagent prompts ไม่ได้ embed Pydantic schema — LLM เดา field names จากตัวอย่าง
+
+**Fix for Optimization:** Prompt ต้อง include **exact field names + required fields list** — ห้ามให้ LLM เดา
+
+#### ปัญหา 2: File Naming Convention Drift (MED)
+
+Subagents ใช้ naming ไม่ตรง:
+- `_EP003_architect.json` → ควรเป็น `_EP003_sa_architect.json` (ขาด `_sa_`)
+- `sa_architect_EP001.json` → ควรเป็น `<prefix>_EP001_sa_architect.json`
+
+**Impact:** Merge tool หาไฟล์ไม่เจอ → FAIL
+
+**Fix:** Prompt ต้องระบุ **exact file path template** — หรือ engine ใช้ glob pattern ยืดหยุ่นกว่านี้
+
+#### ปัญหา 3: Chapter ขนาดเล็กมากทำงานปกติ (LOW — positive)
+
+Looking-Glass EP010 (340 chars) + EP011 (61 chars) — chapters เล็กมาก (แค่ 1-4 บรรทัด)
+
+Pipeline ทำงานได้ปกติ:
+- EP010: 3 events, 1 scene, 2 characters
+- EP011: 1 event, 1 scene, 2 characters
+
+Adaptive 2/3-Pass ต้องไม่พังกับ tiny chapters → ใช้ 2-Pass พอ (15KB threshold จะจับเป็น 2-Pass อยู่แล้ว)
+
+#### ปัญหา 4: Token Cost สูงกว่าที่คาด (MED)
+
+ประมาณการเดิม: ~1,500K tokens สำหรับ 39 chapters
+ของจริง: ~12-15M tokens สำหรับ 31 chapters
+
+**ส่วนต่าง 10x** เกิดจาก:
+1. Subagents ใช้ MCP tools (menzlore prompts, filesystem listing) — แต่ละ call เพิ่ม overhead มาก
+2. Subagents browse filesystem ก่อนทำงาน → หลาย hundred calls ต่อ chapter
+3. DeepSeek V4 Pro reasoning สร้าง output ยาว (10-25K tokens/chapter)
+
+**Implication:** Token optimization ที่ prompt-level อาจลดได้แค่ 20-30% — bottleneck หลักคือ **subagent tool-call overhead** ไม่ใช่ prompt size
+
+---
+
+## Change 4: Schema Compliance (NEW — จาก Baseline)
+
+### ปัญหา
+
+Subagents ใช้ field names ไม่ตรง Pydantic schema → merge FAIL → ต้อง repair ด้วย script
+
+### วิธีแก้: Embed Schema ใน Prompt
+
+ทุก subagent prompt ต้อง include:
+
+```
+REQUIRED FIELDS (exact names — DO NOT rename):
+- Architect: scene_details[{scene_id, order, location, description, mood, characters_present_in_scene}]
+- Profiler: dialogue_summaries[{dialogue_id, participants, topic, summary, key_quotes, in_scene_id}]
+- Chronicler: lore_discoveries[{discovery_id, description, significance, source, evidence_quote, in_scene_id}]
+
+VALIDATION: Before writing, verify EVERY field name matches the required names above.
+If a field is missing, add it with a sensible default (order=i+1, key_quotes=[]).
+```
+
+### Deterministic Validation Layer (Engine)
+
+เพิ่มใน `merge_to_micro_facts.py`:
+
+```python
+# Before Pydantic validation, normalize field names
+def normalize_sa_json(data, kind):
+    """Fix common subagent field name mistakes before Pydantic sees them."""
+    # Auto-number missing 'order'
+    # Add missing 'key_quotes': []
+    # Remap 'discovery' → 'description'
+    # Remap 'speaker'+'listener' → 'dialogue_id'+'participants'
+```
+
+**Rationale:** LLM จะผิด field names เสมอ — ดีกว่า accept ความจริงนี้แล้ว fix ที่ engine ดีกว่าพยายาม enforce ที่ prompt (ซึ่งไม่เคยสำเร็จ 100%)
+
+### Updated Implementation Sequence
+
+| Step | What | Risk | Tokens Saved | Learned from Baseline |
+|---|---|---|---|---|
+| **0** | Add `normalize_sa_json()` in engine | Low | 0 | ปัญหา #1 — ป้องกัน merge fail |
+| **1** | Add `previous_chapters_summary` generator | Low | 0 | — |
+| **2** | Update Chronicler prompt with exact field names | Low | 0 | ปัญหา #1 — embed schema |
+| **3** | Make SA Combined DEFAULT + embed schema | Low-Med | 21-33% | ปัญหา #4 — ลด tool calls |
+| **4** | Remove Sliding Window | Medium | 100% Phase 4-P2 | — |
+| **5** | Split Phase 3.1 into Engine+LLM | Medium | 50% Phase 3.1 | — |
+| **6** | Streamline subagent toolsets → `["file"]` only | Low | 30-50% overhead | ปัญหา #4 — ลด tool-call overhead |
+
+### Updated Token Estimate (from Baseline)
+
+| | Current (measured) | After Optimization (estimated) |
+|---|---|---|
+| Phase 3.1 | ~0 (manual) | ~120K (LLM names-only) |
+| Phase 4 per chapter | ~400K avg | ~150K avg (2-pass + streamlined tools) |
+| Phase 4 total (31ch) | ~12-15M | ~4.5M |
+| **Saving** | — | **~60-70%** |
+
+> ส่วนต่างหลักมาจากการลด tool-call overhead (ปัญหา #4) — subagents ที่ browse filesystem ใช้ token มากกว่า prompt หลายเท่า
 
 | Step | What | Risk | Tokens Saved | Verification |
 |---|---|---|---|---|
