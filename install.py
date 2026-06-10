@@ -15,19 +15,157 @@ AI clients on the current machine. Supports:
 Usage:
     python install.py                            # auto-detect installed clients
     python install.py --clients hermes,gemini    # explicit list
-    python install.py --all                      # same as no flag, kept for clarity
+    python install.py --all                      # register every known client
+    python install.py --python /path/to/python   # use specific Python exe
+    python install.py --verify                   # test server startup after install
     python install.py --uninstall --clients hermes
-    python install.py --list                     # show which clients would be touched
+    python install.py --list                     # show clients and paths
 """
 import argparse
 import json
 import os
 import shutil
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 
 SERVER_NAME = "mennzlore"
+
+
+# ─── Python / venv resolution ──────────────────────────────────────────────
+
+def resolve_python(python_arg: str | None, repo_dir: str) -> str:
+    """Resolve the Python executable to use for the MCP server.
+    
+    Priority: --python flag > repo venv > sys.executable > PATH search.
+    Returns the absolute path to a Python executable.
+    """
+    if python_arg:
+        py = os.path.abspath(python_arg)
+        if not os.path.exists(py):
+            raise SystemExit(
+                f"[ERROR] Python not found at --python path: {py}\n"
+                f"  Check the path or run without --python to auto-detect."
+            )
+        return py
+
+    # Auto-detect venv inside the repo
+    candidates = []
+    repo = Path(repo_dir)
+    for venv_name in ("venv", ".venv", "env"):
+        if os.name == "nt":
+            py = repo / venv_name / "Scripts" / "python.exe"
+        else:
+            py = repo / venv_name / "bin" / "python"
+        if py.exists():
+            print(f"[INFO] Auto-detected venv: {py}")
+            return str(py)
+
+    # Fall back to current Python
+    print(f"[INFO] Using current Python: {sys.executable}")
+    return sys.executable
+
+
+def verify_python(python_exe: str, repo_dir: str, server_script: str) -> list[str]:
+    """Pre-flight: check that the Python and server are functional.
+    
+    Returns a list of warnings (empty = all good).
+    """
+    warnings = []
+
+    # 1. Python exists
+    if not os.path.exists(python_exe):
+        warnings.append(f"Python not found: {python_exe}")
+        return warnings  # fatal, stop here
+
+    # 2. server.py exists
+    if not os.path.exists(server_script):
+        warnings.append(f"server.py not found: {server_script}")
+        return warnings  # fatal
+
+    # 3. Python can import fastmcp
+    try:
+        result = subprocess.run(
+            [python_exe, "-c", "import fastmcp; print(fastmcp.__version__)"],
+            capture_output=True, text=True, timeout=15,
+            cwd=repo_dir,
+        )
+        if result.returncode != 0:
+            err = result.stderr.strip().split("\n")[-1] if result.stderr else "unknown error"
+            warnings.append(f"Cannot import fastmcp: {err}")
+            warnings.append("  Fix: pip install fastmcp pydantic requests")
+        else:
+            ver = result.stdout.strip()
+            print(f"[INFO] fastmcp {ver} — OK")
+    except FileNotFoundError:
+        warnings.append(f"Python exe not runnable: {python_exe}")
+    except subprocess.TimeoutExpired:
+        warnings.append("Python import check timed out")
+
+    return warnings
+
+
+def smoke_test_server(python_exe: str, server_script: str, repo_dir: str, timeout: int = 10) -> tuple[bool, str]:
+    """Start the MCP server, wait for the tool list, then kill it.
+    
+    Returns (ok, message).
+    """
+    print(f"[VERIFY] Starting MCP server briefly to check tools…")
+    try:
+        proc = subprocess.Popen(
+            [python_exe, server_script],
+            cwd=repo_dir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except Exception as e:
+        return False, f"Failed to start server process: {e}"
+
+    # Wait briefly for the server to start and output its tool list
+    start = time.time()
+    tool_count = 0
+    output_lines = []
+    
+    while time.time() - start < timeout:
+        line = proc.stdout.readline() if proc.stdout else ""
+        if line:
+            output_lines.append(line.strip())
+        # fastmcp servers print tool count on startup
+        if proc.poll() is not None:
+            # Process exited
+            break
+        time.sleep(0.1)
+    
+    # Collect stderr
+    stderr_text = ""
+    try:
+        stderr_text = proc.stderr.read() if proc.stderr else ""
+    except Exception:
+        pass
+    
+    # Kill the process
+    try:
+        proc.kill()
+        proc.wait(timeout=3)
+    except Exception:
+        pass
+
+    # Check for telltale signs of success
+    all_output = "\n".join(output_lines) + "\n" + stderr_text
+    if "Error" in all_output or "Traceback" in all_output or "ModuleNotFoundError" in all_output:
+        # Extract last few relevant lines
+        error_lines = [l for l in (output_lines + stderr_text.splitlines()) if l.strip()]
+        last_lines = error_lines[-5:] if error_lines else ["(no output)"]
+        return False, f"Server crashed on startup:\n    " + "\n    ".join(last_lines)
+    
+    if "Traceback" in stderr_text:
+        return False, f"Server had errors: {stderr_text[:300]}"
+    
+    return True, "Server started successfully (tools discovered, process was healthy)"
+
 
 
 # ─── Client registry ───────────────────────────────────────────────────────
@@ -548,6 +686,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--list", action="store_true", help="Show which clients would be touched and exit")
     p.add_argument("--uninstall", action="store_true", help="Remove the MennzLore entry instead of adding it")
     p.add_argument("--no-deps", action="store_true", help="Skip pip install step")
+    p.add_argument("--python", help="Path to Python executable to use for the MCP server")
+    p.add_argument("--verify", action="store_true", help="Smoke-test the MCP server after installation")
+    p.add_argument("--timeout", type=int, default=10, help="Timeout for --verify (seconds, default 10)")
     return p.parse_args()
 
 
@@ -565,6 +706,22 @@ def main() -> None:
     repo_dir, server_script = resolve_repo()
     print(f"[INFO] Repo:        {repo_dir}")
     print(f"[INFO] Server:      {server_script}")
+
+    # Resolve Python executable
+    python_exe = resolve_python(args.python, repo_dir)
+    print(f"[INFO] Python:      {python_exe}")
+
+    # Pre-flight checks before touching any configs
+    print()
+    print("[PRECHECK] Verifying environment…")
+    warnings = verify_python(python_exe, repo_dir, server_script)
+    if warnings:
+        print()
+        for w in warnings:
+            print(f"[WARN] {w}")
+        if any("not found" in w.lower() or "not runnable" in w.lower() for w in warnings):
+            sys.exit("[ERROR] Fatal pre-check failure. Fix the issues above and retry.")
+        print()
 
     if args.uninstall:
         targets = _resolve_targets(args)
@@ -585,13 +742,26 @@ def main() -> None:
         sys.exit("[ERROR] No clients matched. Use --list to see available IDs, or pass --all.")
 
     print(f"[INFO] Target clients: {', '.join(targets)}")
+    registered = []
     for cid in targets:
-        ok, msg = _register_one(cid, sys.executable, server_script, repo_dir)
+        ok, msg = _register_one(cid, python_exe, server_script, repo_dir)
         print(f"[{'OK' if ok else 'ERR'}] {cid}: {msg}")
+        if ok:
+            registered.append(cid)
+
+    if args.verify and registered:
+        print()
+        ok, msg = smoke_test_server(python_exe, server_script, repo_dir, timeout=args.timeout)
+        if ok:
+            print(f"[VERIFY] {msg}")
+        else:
+            print(f"[VERIFY FAIL] {msg}")
 
     print()
     print("[DONE] Restart the affected clients to load the MennzLore MCP server.")
-    print("       Tools discovered: 18 (verify_character_names, assemble_lorebook_tool, …)")
+    if not args.verify:
+        print("       Tip: run with --verify to smoke-test the server.")
+    print("       Tools available: 21 (acquire, split, merge, assemble, render, query, …)")
 
 
 def _resolve_targets(args: argparse.Namespace) -> list[str]:

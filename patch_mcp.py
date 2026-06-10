@@ -1,7 +1,13 @@
 import os
 import re
+import sys
 
-SERVER_PATH = r"C:\Users\mennz\MennzLore-fix\mcp_server\server.py"
+# Use the server.py in the same repo (relative to this script)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SERVER_PATH = os.path.join(SCRIPT_DIR, "mcp_server", "server.py")
+
+if not os.path.exists(SERVER_PATH):
+    sys.exit(f"[ERROR] server.py not found at {SERVER_PATH}")
 
 with open(SERVER_PATH, "r", encoding="utf-8") as f:
     content = f.read()
