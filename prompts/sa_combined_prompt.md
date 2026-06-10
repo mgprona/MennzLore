@@ -29,7 +29,9 @@
      "owner": "Jurgen", "location": "Nessus's Cave"}
   ],
   "character_states": [
-    {"character": "Jurgen", "state": "active", "description": "Walking home and talking to a monk", "in_scene_id": "SC-001"}
+    {"character": "Jurgen", "state": "active",
+     "description": "Walking home and talking to a monk",
+     "in_scene_id": "SC-001"}
   ],
   "dialogue_summaries": [
     {"dialogue_id": "DLG-001", "participants": ["Jurgen", "the monk"],
@@ -43,7 +45,6 @@
   "total_scenes_count": 2,
   "total_dialogues_count": 2,
   "_source_hash": "a1b2c3d4..."
-}
 }
 ```
 

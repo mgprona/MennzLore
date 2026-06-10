@@ -66,6 +66,7 @@ if _patch_needed:
 def _check_for_updates():
     """Warn on stderr if a newer MennzLore version is on GitHub.
     Cached: only checks once per 24 hours. Non-blocking (<1s).
+    Skips silently if git remote is not configured or network is unavailable.
     """
     cache_path = os.path.join(os.path.expanduser("~"), ".mennzlore_update_cache.json")
     if not os.path.exists(cache_path):
@@ -81,15 +82,26 @@ def _check_for_updates():
         except Exception:
             cache = {"checked_at": 0}
 
-    # Refresh: git fetch + compare
+    # Verify a remote named 'origin' exists before attempting network fetch
+    try:
+        remote_check = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=ROOT_DIR, capture_output=True, text=True, timeout=3,
+        )
+        if remote_check.returncode != 0:
+            return  # No origin remote — skip silently
+    except Exception:
+        return
+
+    # Refresh: git fetch + compare (short timeout to avoid blocking startup)
     try:
         subprocess.run(
             ["git", "fetch", "origin", "master"],
-            cwd=ROOT_DIR, capture_output=True, text=True, timeout=15,
+            cwd=ROOT_DIR, capture_output=True, text=True, timeout=5,
         )
         result = subprocess.run(
             ["git", "rev-list", "--count", "HEAD..origin/master"],
-            cwd=ROOT_DIR, capture_output=True, text=True, timeout=10,
+            cwd=ROOT_DIR, capture_output=True, text=True, timeout=3,
         )
         behind = int(result.stdout.strip() or "0")
         cache = {"checked_at": time.time(), "update_available": behind > 0, "commits_behind": behind}
@@ -884,7 +896,10 @@ def _run_engine_phase(phase_id: str, project_dir: str, prefix: str):
 
     elif phase_id == "13_semantic":
         result = query_lore_semantic(project_dir, prefix=prefix, query="character", limit=1)
-        print(f"[Phase 13] Semantic index: {len(result)} results — OK")
+        n = len(result.get("results", [])) if isinstance(result, dict) else 0
+        engine_type = result.get("engine", "?") if isinstance(result, dict) else "?"
+        indexed = result.get("indexed_documents", 0) if isinstance(result, dict) else 0
+        print(f"[Phase 13] Semantic index ({engine_type}): {indexed} docs indexed, {n} results — OK")
 
     elif phase_id == "14_assemble":
         assemble_lorebook(project_dir, prefix)
@@ -920,6 +935,45 @@ def _split_chronicler_template() -> tuple[str, str]:
     system_part = before + "\n\n" + after[schema_start:] if schema_start >= 0 else before
     input_header = "## INPUT DATA" + (after[:schema_start] if schema_start >= 0 else "")
     return system_part, input_header
+
+
+@mcp.prompt()
+def analyze_architect(chapter_text: str) -> list[Message]:
+    """Get the prompt for Pass 1.1 (Architect): extract scene structure and key plot points from a chapter."""
+    import hashlib
+    template = read_repo_file("prompts/pass11_architect_prompt.md")
+    source_hash = hashlib.sha256(chapter_text.encode("utf-8")).hexdigest()
+    hash_note = (
+        f"\n\n## REQUIRED: _source_hash\n"
+        f'Include this EXACT field in your JSON output:\n'
+        f'"_source_hash": "{source_hash}"\n'
+        f"(This proves you read the actual chapter text)\n"
+    )
+    filled = template.replace("{chapter_text}", chapter_text)
+    return [
+        Message(filled + hash_note, role="system"),
+    ]
+
+
+@mcp.prompt()
+def analyze_profiler(chapter_text: str, architect_json: str) -> list[Message]:
+    """Get the prompt for Pass 1.2 (Profiler): extract characters, behaviors, items, and dialogue using Architect scene list."""
+    import json as _j
+    template = read_repo_file("prompts/pass12_profiler_prompt.md")
+    # Build a compact scene list string from architect JSON for prompt injection
+    try:
+        arch = _j.loads(architect_json)
+        scenes = arch.get("scene_details", [])
+        scene_list = "\n".join(
+            f"- {s.get('scene_id', '?')}: {s.get('location', '?')} — {s.get('description', '')[:80]}"
+            for s in scenes
+        )
+    except Exception:
+        scene_list = architect_json[:500]
+    filled = template.replace("{scene_list}", scene_list).replace("{chapter_text}", chapter_text)
+    return [
+        Message(filled, role="system"),
+    ]
 
 
 @mcp.prompt()
