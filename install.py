@@ -584,6 +584,61 @@ def detect_installed() -> list[str]:
     return found
 
 
+def detect_registered() -> list[str]:
+    """Return client IDs that already have mennzlore in their config."""
+    found = []
+    for cid, spec in CLIENTS.items():
+        path = spec["path"]()
+        if not path.exists():
+            continue
+        fmt = spec["format"]
+        section = spec["section"]
+        try:
+            if fmt in ("json", "jsonc"):
+                data = _read_json(path)
+                if section in data and SERVER_NAME in data.get(section, {}):
+                    found.append(cid)
+            elif fmt == "yaml":
+                data = _read_yaml(path)
+                if isinstance(data, dict) and section in data and SERVER_NAME in data.get(section, {}):
+                    found.append(cid)
+            elif fmt == "toml":
+                text = path.read_text(encoding="utf-8")
+                if f"[{section}.{SERVER_NAME}]" in text or f"[mcp_servers.{SERVER_NAME}]" in text:
+                    found.append(cid)
+        except Exception:
+            continue
+    return found
+
+
+def upgrade_repo(repo_dir: str, python_exe: str, server_script: str) -> list[str]:
+    """Git pull + pip upgrade. Returns list of warnings."""
+    warnings = []
+
+    # 1. Git pull
+    print("[UPGRADE] git pull…")
+    result = subprocess.run(
+        ["git", "pull"],
+        cwd=repo_dir, capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode != 0:
+        warnings.append(f"git pull failed: {result.stderr.strip()[:200]}")
+    else:
+        print(f"         {result.stdout.strip().split(chr(10))[-1]}")
+
+    # 2. Pip upgrade deps
+    print("[UPGRADE] pip install --upgrade fastmcp pydantic requests…")
+    result = subprocess.run(
+        [python_exe, "-m", "pip", "install", "--quiet", "--upgrade",
+         "fastmcp", "pydantic", "requests"],
+        cwd=repo_dir, capture_output=True, text=True, timeout=60,
+    )
+    if result.returncode != 0:
+        warnings.append(f"pip upgrade warning: {result.stderr.strip()[:200]}")
+
+    return warnings
+
+
 # ─── API key resolution ────────────────────────────────────────────────────
 
 def _load_api_key() -> str:
@@ -689,6 +744,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--python", help="Path to Python executable to use for the MCP server")
     p.add_argument("--verify", action="store_true", help="Smoke-test the MCP server after installation")
     p.add_argument("--timeout", type=int, default=10, help="Timeout for --verify (seconds, default 10)")
+    p.add_argument("--upgrade", action="store_true", help="Git pull + pip upgrade + re-register with detected clients")
     return p.parse_args()
 
 
@@ -733,13 +789,33 @@ def main() -> None:
         print("[DONE] Uninstallation complete. Restart the affected clients.")
         return
 
-    # Install path
-    if not args.no_deps:
-        install_deps()
+    # --- Upgrade path ---
+    if args.upgrade:
+        print()
+        upgrade_warnings = upgrade_repo(repo_dir, python_exe, server_script)
+        for w in upgrade_warnings:
+            print(f"[WARN] {w}")
+        if any("failed" in w.lower() for w in upgrade_warnings):
+            print("[WARN] Upgrade had issues — continuing with re-registration…")
+        print()
+        targets = detect_registered()
+        if not targets:
+            print("[INFO] No clients currently registered with mennzlore.")
+            print("       Run without --upgrade for fresh install.")
+        else:
+            print(f"[INFO] Re-registering {len(targets)} existing client(s): {', '.join(targets)}")
+        if not args.no_deps:
+            install_deps()
+    else:
+        # Normal install path
+        targets = _resolve_targets(args)
 
-    targets = _resolve_targets(args)
     if not targets:
         sys.exit("[ERROR] No clients matched. Use --list to see available IDs, or pass --all.")
+
+    # Install deps for normal install path (upgrade already handled above)
+    if not args.upgrade and not args.no_deps:
+        install_deps()
 
     print(f"[INFO] Target clients: {', '.join(targets)}")
     registered = []
