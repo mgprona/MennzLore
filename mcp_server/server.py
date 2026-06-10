@@ -18,6 +18,35 @@ for d in (ROOT_DIR, ENGINE_DIR):
 
 from fastmcp import FastMCP
 from fastmcp.prompts import Message
+import fastmcp.prompts.base as _fb
+
+# ── Prompt Caching Patch ────────────────────────────────────────────────────
+# fastmcp 3.4.2 + mcp.types only accept Literal["user","assistant"] for
+# role.  We monkey-patch Message so it accepts "system" too, which enables
+# LLM prompt-caching (Anthropic ephemeral / OpenAI cached system messages)
+# when the client splits the prompt into a static system part and a dynamic
+# user part.
+
+_orig_message_init = _fb.Message.__init__
+
+def _patched_message_init(self, content, role="user"):
+    role_actual = role
+    if role not in ("user", "assistant"):
+        role = "user"
+    _orig_message_init(self, content, role=role)
+    object.__setattr__(self, "_role_actual", role_actual)
+
+_orig_to_mcp = _fb.Message.to_mcp_prompt_message
+
+def _patched_to_mcp(self):
+    result = _orig_to_mcp(self)
+    actual_role = getattr(self, "_role_actual", None)
+    if actual_role and actual_role not in ("user", "assistant"):
+        object.__setattr__(result, "role", actual_role)
+    return result
+
+_fb.Message.__init__ = _patched_message_init
+_fb.Message.to_mcp_prompt_message = _patched_to_mcp
 
 from engine.merge_to_micro_facts import merge_to_micro_facts
 from engine.assemble_generic import assemble_lorebook
@@ -648,41 +677,75 @@ def extract_global_lore(project_dir: str, prefix: str = "") -> list[Message]:
     candidates = extract_name_candidates(chapters)
     user_content = _build_user_prompt(prefix, chapters, candidates)
     return [
-        Message(SYSTEM_PROMPT + "\n\n" + user_content, role="user")
+        Message(SYSTEM_PROMPT, role="system"),
+        Message(user_content, role="user"),
     ]
+
+
+def _split_chronicler_template() -> tuple[str, str]:
+    """Split pass13_chronicler_prompt.md into (system_instructions, input_section)."""
+    template = read_repo_file("prompts/pass13_chronicler_prompt.md")
+    parts = template.split("## INPUT DATA")
+    before = parts[0].strip()
+    after = parts[1] if len(parts) > 1 else ""
+    schema_start = after.find("## ")
+    system_part = before + "\n\n" + after[schema_start:] if schema_start >= 0 else before
+    input_header = "## INPUT DATA" + (after[:schema_start] if schema_start >= 0 else "")
+    return system_part, input_header
+
 
 @mcp.prompt()
 def analyze_chronicler(architect_json: str, profiler_json: str, global_lore_excerpt: str, previous_chapters_summary: str = "") -> list[Message]:
     """Get the prompt for Pass 1.3 (Chronicler) to extract cross-chapter connections."""
-    template = read_repo_file("prompts/pass13_chronicler_prompt.md")
-    combined = (template
-                .replace("{architect_json}", architect_json)
-                .replace("{profiler_json}", profiler_json)
-                .replace("{global_lore_excerpt}", global_lore_excerpt)
-                .replace("{previous_chapters_summary}", previous_chapters_summary))
+    system_part, input_header = _split_chronicler_template()
+    user_part = f"""{input_header}
+
+### Architect (Scenes)
+{architect_json}
+
+### Profiler (Characters/Items/Dialogue)
+{profiler_json}
+
+### Global Lore Excerpt
+{global_lore_excerpt}
+
+### Previous Chapters Summary (Context)
+{previous_chapters_summary}"""
     return [
-        Message(combined, role="user")
+        Message(system_part, role="system"),
+        Message(user_part, role="user"),
     ]
+
 
 @mcp.prompt()
 def sa_combined(chapter_text: str) -> list[Message]:
     """Get the prompt for SA Combined: direct micro-facts extraction from a single chapter."""
     template = read_repo_file("prompts/sa_combined_prompt.md")
-    combined = template + "\n\n## CHAPTER TEXT\n\n" + chapter_text
     return [
-        Message(combined, role="user")
+        Message(template, role="system"),
+        Message("## Chapter Text\n\n" + chapter_text, role="user"),
     ]
+
 
 @mcp.prompt()
 def sa_lore(part1_output: str, global_lore_excerpt: str, previous_chapters_summary: str = "") -> list[Message]:
     """Get the prompt for SA Lore matching: match combined facts against global lore."""
     template = read_repo_file("prompts/sa_lore_prompt.md")
-    combined = (template
-                .replace("{part1_output}", part1_output)
-                .replace("{global_lore_excerpt}", global_lore_excerpt)
-                .replace("{previous_chapters_summary}", previous_chapters_summary))
+    user_part = f"""## INPUT DATA
+
+### Part 1 — SA Combined Output
+```json
+{part1_output}
+```
+
+### Global Lore Excerpt
+{global_lore_excerpt}
+
+### Previous Chapters Summary
+{previous_chapters_summary}"""
     return [
-        Message(combined, role="user")
+        Message(template, role="system"),
+        Message(user_part, role="user"),
     ]
 
 
