@@ -32,25 +32,33 @@ import fastmcp.prompts.base as _fb
 # user part.
 
 _orig_message_init = _fb.Message.__init__
+_patch_needed = True
+try:
+    _fver = tuple(int(x) for x in fastmcp.__version__.split(".")[:2]) if hasattr(fastmcp, "__version__") else (0, 0)
+    if _fver >= (3, 5):
+        _patch_needed = False
+except Exception:
+    pass
 
-def _patched_message_init(self, content, role="user"):
-    role_actual = role
-    if role not in ("user", "assistant"):
-        role = "user"
-    _orig_message_init(self, content, role=role)
-    object.__setattr__(self, "_role_actual", role_actual)
+if _patch_needed:
+    def _patched_message_init(self, content, role="user"):
+        role_actual = role
+        if role not in ("user", "assistant"):
+            role = "user"
+        _orig_message_init(self, content, role=role)
+        object.__setattr__(self, "_role_actual", role_actual)
 
-_orig_to_mcp = _fb.Message.to_mcp_prompt_message
+    _orig_to_mcp = _fb.Message.to_mcp_prompt_message
 
-def _patched_to_mcp(self):
-    result = _orig_to_mcp(self)
-    actual_role = getattr(self, "_role_actual", None)
-    if actual_role and actual_role not in ("user", "assistant"):
-        object.__setattr__(result, "role", actual_role)
-    return result
+    def _patched_to_mcp(self):
+        result = _orig_to_mcp(self)
+        actual_role = getattr(self, "_role_actual", None)
+        if actual_role and actual_role not in ("user", "assistant"):
+            object.__setattr__(result, "role", actual_role)
+        return result
 
-_fb.Message.__init__ = _patched_message_init
-_fb.Message.to_mcp_prompt_message = _patched_to_mcp
+    _fb.Message.__init__ = _patched_message_init
+    _fb.Message.to_mcp_prompt_message = _patched_to_mcp
 
 
 # ── Auto-update check (non-blocking, cached 24h) ──────────────────────────
@@ -60,19 +68,18 @@ def _check_for_updates():
     Cached: only checks once per 24 hours. Non-blocking (<1s).
     """
     cache_path = os.path.join(os.path.expanduser("~"), ".mennzlore_update_cache.json")
-    now = _json.loads(_json.dumps({"t": 0})) if not os.path.exists(cache_path) else None
-    if not now:
+    if not os.path.exists(cache_path):
+        cache = {"checked_at": 0}
+    else:
         try:
             with open(cache_path, encoding="utf-8") as f:
                 cache = _json.load(f)
-            last_check = cache.get("checked_at", 0)
-            if time.time() - last_check < 86400:  # 24 hours
-                # Still fresh — reuse cached result
+            if time.time() - cache.get("checked_at", 0) < 86400:  # 24 hours
                 if cache.get("update_available"):
                     print(f"[MennzLore] UPDATE AVAILABLE — run: python install.py --upgrade", file=sys.stderr)
                 return
         except Exception:
-            pass
+            cache = {"checked_at": 0}
 
     # Refresh: git fetch + compare
     try:
@@ -234,7 +241,13 @@ def open_dashboard_tool() -> str:
         
     try:
         server_path = os.path.join(ROOT_DIR, "engine", "dashboard_server.py")
-        subprocess.Popen([sys.executable, server_path], close_fds=True)
+        subprocess.Popen(
+            [sys.executable, server_path],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
         return f"[OK] Started interactive dashboard server. Open http://localhost:{port} in your browser."
     except Exception as e:
         return f"[ERROR] Failed to start dashboard server: {e}"
@@ -342,7 +355,8 @@ def query_knowledge_graph(project_dir: str, prefix: str = "",
         if not prefix:
             prefix = os.path.basename(project_dir.rstrip("/\\"))
         
-        kg = load_knowledge_graph(project_dir, prefix)
+        kg = load_knowledge_graph(project_dir, prefix,
+                                   db_path=os.path.join(project_dir, "output", "knowledge_graph.db"))
         
         if action == "stats":
             result = kg.stats()
@@ -622,6 +636,8 @@ def run_global_lore(project_dir: str, prefix: str = "", model: str = "gpt-4o") -
     """
     from engine.phase3_global_lore import run_phase3_global_lore
     try:
+        if not os.environ.get("OPENAI_API_KEY"):
+            return {"status": "error", "message": "OPENAI_API_KEY not set. Use save_global_lore instead (no API key needed)."}
         if not prefix:
             prefix = os.path.basename(project_dir.rstrip("/\\"))
         result = run_phase3_global_lore(project_dir, prefix, model=model)
@@ -859,7 +875,8 @@ def _run_engine_phase(phase_id: str, project_dir: str, prefix: str):
         build_entity_registry(project_dir, prefix)
 
     elif phase_id == "11_knowledge_graph":
-        load_knowledge_graph(project_dir, prefix)
+        load_knowledge_graph(project_dir, prefix,
+                             db_path=os.path.join(project_dir, "output", "knowledge_graph.db"))
 
     elif phase_id == "12_timeline":
         render_timeline(project_dir, prefix)

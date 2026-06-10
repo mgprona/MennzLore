@@ -13,8 +13,9 @@ import http.server
 import socketserver
 import urllib.parse
 
+from pathlib import Path
 PORT = 8000
-SCRATCH_DIR = r"C:\Users\mennz\.gemini\antigravity\scratch"
+SCRATCH_DIR = os.getenv("MENNZLORE_SCRATCH_DIR", str(Path.home() / ".gemini" / "antigravity" / "scratch"))
 DASHBOARD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard")
 
 class DashboardHandler(http.server.SimpleHTTPRequestHandler):

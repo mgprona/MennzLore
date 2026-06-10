@@ -84,7 +84,6 @@ MennzLore/
 │   └── MCP_DESIGN.md          # MCP design decisions
 │
 ├── install.py                 # Multi-client auto-installer (7 AI clients)
-├── patch_mcp.py               # MCP server patching utility
 ├── requirements.txt           # Python dependencies
 └── README.md                  # This file
 ```

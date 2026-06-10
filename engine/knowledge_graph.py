@@ -62,9 +62,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS evidence_fts USING fts5(
     entity_name,
     quote,
     description,
-    chapter,
-    content='',
-    content_rowid='rowid'
+    chapter
 );
 
 -- Indexes for common queries
@@ -479,6 +477,19 @@ class KnowledgeGraph:
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
+def _rebuild_adjacency(kg: KnowledgeGraph) -> None:
+    """Rebuild in-memory adjacency maps from the SQLite tables."""
+    cursor = kg.conn.cursor()
+    cursor.execute("SELECT id, name FROM entities")
+    for row in cursor.fetchall():
+        kg._name_to_id[row["name"]] = row["id"]
+        kg._id_to_name[row["id"]] = row["name"]
+    
+    cursor.execute("SELECT source_id, target_id FROM relations")
+    for row in cursor.fetchall():
+        kg._adj[row["source_id"]].add(row["target_id"])
+        kg._adj[row["target_id"]].add(row["source_id"])
+
 def load_knowledge_graph(project_dir: str, prefix: str = "",
                          db_path: str | None = None) -> KnowledgeGraph:
     """Load a project into a queryable KnowledgeGraph.
@@ -487,6 +498,8 @@ def load_knowledge_graph(project_dir: str, prefix: str = "",
         project_dir: Path to project directory
         prefix: Project prefix
         db_path: SQLite database path (default: in-memory)
+            When a file path is given, the DB is persisted and reused across
+            calls.  It is automatically created/refreshed the first time.
     
     Returns:
         KnowledgeGraph instance ready for queries
@@ -496,9 +509,25 @@ def load_knowledge_graph(project_dir: str, prefix: str = "",
     
     if db_path is None:
         db_path = ":memory:"
+    else:
+        os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
     
     kg = KnowledgeGraph(db_path)
+    
+    # If the file-based DB already has data, skip reloading
+    if db_path != ":memory:" and os.path.exists(db_path):
+        cursor = kg.conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM entities")
+        count = cursor.fetchone()[0]
+        if count > 0:
+            # Rebuild the in-memory adjacency from existing tables
+            _rebuild_adjacency(kg)
+            print(f"[OK] Knowledge graph loaded from cache: {count} entities")
+            return kg
+    
     stats = kg.load_project(project_dir, prefix)
+    # Rebuild adjacency after load (needed for in-memory case too)
+    _rebuild_adjacency(kg)
     print(f"[OK] Knowledge graph loaded: {stats}")
     return kg
 

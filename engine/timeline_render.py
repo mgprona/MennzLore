@@ -182,10 +182,7 @@ def _render_svg_timeline(timeline: List[dict], chapter_appearance: dict,
                 if char in char_y_positions:
                     cy = char_y_positions[char]
                     parts.append(f'<circle cx="{x:.0f}" cy="{cy:.0f}" r="4" '
-                                 f'fill="{color}" opacity="0.8"/>')
-        
-        # Major milestone markers
-        y_milestone_placeholder = y_char + 20 + (n_chars + 1) * char_row_height
+                                  f'fill="{color}" opacity="0.8"/>')
     
     # ── Locations summary ──
     all_locations = set()
