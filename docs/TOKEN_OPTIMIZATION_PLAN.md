@@ -1,176 +1,318 @@
-# MennzLore Token Optimization Plan
+# MennzLore Token Optimization Plan v2
 
-> **Status:** Draft — pending review  
+> **Status:** Draft v2 — revised 2026-06-10  
 > **Target:** v5.1  
-> **Goal:** ลด token consumption 50-60% โดยไม่เสีย detail ของ micro_facts
+> **Goal:** ลด token consumption ~50% โดยไม่เสียความสามารถในการ detect disguised names และไม่ลดทอนคุณภาพ micro_facts
 
 ---
 
-## Problem
+## หลักการออกแบบ (Design Principles)
 
-Pipeline ปัจจุบัน extract ข้อมูลชุดเดียวกันด้วย LLM ซ้ำ 2-3 รอบ:
+ก่อนตัดสินใจเปลี่ยนอะไร ต้องเข้าใจก่อนว่า **งานไหน LLM ทำแทน engine ไม่ได้:**
 
-| Data | Extracted in | Duplication |
+| งาน | Engine ทำได้? | LLM จำเป็น? |
 |---|---|---|
-| Character names | Phase 3.1 + Phase 4 Arch + Phase 4 Prof | **3×** |
-| Character traits | Phase 3.1 + Phase 4 Prof | **2×** |
-| Locations | Phase 3.1 + Phase 4 Arch | **2×** |
-| Events/timeline | Phase 3.1 + Phase 4 Arch + Phase 4 Chron | **3×** |
-| Cross-chapter connections | Phase 4 Chron + Phase 4-P2 Sliding Window | **2×** |
+| หาชื่อ `Mr./Captain/Sir` จาก regex | ✅ | ❌ |
+| นับจำนวนครั้งที่ชื่อปรากฏต่อตอน | ✅ | ❌ |
+| ตรวจจับ chapter heading จาก pattern | ✅ | ❌ |
+| รู้ว่า `Spyglass` เป็นชื่อตัวละคร ไม่ใช่สิ่งของ | ❌ | ✅ |
+| รู้ว่า `Heans = Sir William = Sir William Heans` | ❌ | ✅ |
+| แยกแยะ mood ของ scene (tense/comic/tragic) | ❌ | ✅ |
+| เข้าใจ foreshadowing ข้ามตอน | ❌ | ✅ |
+| รู้ว่า dialogue นี้ประชดหรือจริงใจ | ❌ | ✅ |
 
-สำหรับนิยาย 39 ตอน (~200K words):
+**กฎเหล็ก:** งานที่ต้องใช้ **ความเข้าใจภาษา** = LLM เท่านั้น — ห้ามย้ายไป engine
 
-| Metric | Current | Target |
+---
+
+## สิ่งที่ pipeline ปัจจุบันทำซ้ำซ้อน
+
+LLM อ่านข้อมูลชุดเดียวกันหลายรอบเพื่อ extract ข้อมูลที่ทับซ้อนกัน:
+
+| ข้อมูล | ถูก extract ที่ไหน | ซ้ำกี่รอบ |
 |---|---|---|
-| Phase 3.1 tokens | ~240K | ~60K |
-| Phase 4 LLM calls | 117 (3×39) | 78 (2×39) |
+| Character names | Phase 3.1 + Phase 4 Architect + Phase 4 Profiler | **3×** |
+| Character traits & descriptions | Phase 3.1 + Phase 4 Profiler | **2×** |
+| Locations | Phase 3.1 + Phase 4 Architect | **2×** |
+| Events & timeline | Phase 3.1 + Phase 4 Architect + Phase 4 Chronicler | **3×** |
+| Cross-chapter connections | Phase 4 Chronicler + Phase 4-P2 Sliding Window | **2×** |
+| Chapter text (raw input) | Phase 4 Architect + Phase 4 Profiler | **2× ต่อตอน** |
+
+**ตัวเลขสำหรับนิยาย 39 ตอน (~200K words):**
+
+| | Current | Target |
+|---|---|---|
+| Phase 3.1 tokens | ~240K | ~120K |
+| Phase 4 LLM calls | 117 (3×39) | 78-97 (adaptive 2-3 pass) |
 | Phase 4-P2 calls | ~8 batches | 0 |
-| **Total LLM calls** | **~125** | **~78** |
-| **Total tokens** | **~1,500K** | **~700K** |
+| Total LLM calls | ~125 | ~78-97 |
+| Total tokens | ~1,500K | ~750K |
 
 ---
 
-## Proposed Changes
+## Change 1: Phase 3.1 — LLM ยังอ่านทั้งเล่ม แต่ extract แค่ชื่อ
 
-### Change 1: Phase 3.1 → Engine-First (75% token reduction)
+### ปัญหาที่ต้องแก้
 
-**Current:** LLM reads ALL chapters → extracts 4 JSON artefacts
+Global Lore ปัจจุบันขอให้ LLM extract 4 อย่างจาก text ทั้งเล่ม:
+1. Characters (ชื่อ + description + arc + relationships + visual profile)
+2. Timeline (เหตุการณ์สำคัญ + chapter summaries)
+3. Chapter appearance (ตัวละครโผล่ตอนไหน)
+4. World building & motifs
 
-**Proposed:** Split into Engine (deterministic) + LLM (reading sample only)
+**ของข้อ 2-4** Phase 4 ทำซ้ำอยู่แล้วและละเอียดกว่า:
+- Timeline → Architect ทำ `key_plot_points` ต่อตอน granular กว่า
+- Chapter appearance → grep จาก name_map ที่มีอยู่แล้ว แม่น 100%
+- World building → Chronicler ทำ `lore_discoveries` ต่อตอน
 
+**ของข้อ 1** มีส่วนที่ Phase 4 ทำซ้ำ (descriptions, visual profile) และส่วนที่ **LLM เท่านั้นที่ทำได้** (detect ชื่อปลอมอย่าง `Spyglass`)
+
+### วิธีแก้
+
+**Phase 3.1a — ENGINE (0 tokens):**
 ```
-Phase 3.1a (ENGINE — zero tokens):
-  ├── grep chapter headings → book structure (BOOK I/II/III)
-  ├── grep `Mr\.?|Mrs\.?|Captain|Sir|Miss|Dr\.?` patterns → name_map candidates
-  ├── grep character mentions per chapter → chapter_appearance
-  └── write name_map + chapter_appearance + timeline_framework skeleton
+Input:  clean/*.txt ทั้งหมด
+Output: name_candidates (จาก regex) + chapter_appearance_skeleton + book_structure
+```
+- grep `Mr\.?|Mrs\.?|Captain|Sir|Miss|Dr\.?|Lady|Lord|Colonel|Major` → พบ ~80% ของชื่อ
+- grep capitalized words ที่ปรากฏ ≥3 ครั้ง → candidate pool
+- detect chapter headings → book_structure (BOOK I/II/III, ตอนละกี่ chapter)
 
-Phase 3.1b (LLM — ~60K tokens):
-  ├── read ONLY 2-3 key chapters (first, turning point, last)
-  ├── extract: book_metadata, genre, main_theme, narrative_device, pov
-  ├── extract: key character relationships (from sample)
-  └── merge into global_lore
+**Phase 3.1b — LLM (อ่านทั้งเล่ม แต่ prompt เล็กลง 60%):**
+```
+Input:  clean/*.txt ทั้งหมด + name_candidates จาก engine
+Prompt: "Here are known character names found by pattern matching: [engine list].
+         Read ALL chapters and identify:
+         1. Any MISSING character names — especially disguised names (objects, 
+            nicknames, titles used as names). Flag them with the chapter where 
+            they first appear.
+         2. All aliases for each character (e.g. 'Heans' = 'Sir William' = 
+            'Sir William Heans').
+         3. Which episodes each character appears in.
+         Do NOT write descriptions, arcs, or relationships. Names and 
+         aliases ONLY. Engine will handle the rest."
+Output: name_map (canonical + aliases + episodes) + chapter_appearance
+Tokens: ~120K (vs ~240K เดิม — เพราะไม่ต้อง extract descriptions)
 ```
 
-**Quality guard:** Phase 4 Profiler will extract detailed character behaviors per chapter anyway. Global Lore only needs the OVERVIEW — character arcs and deep traits come from micro_facts.
+**Phase 3.1c — ENGINE (0 tokens):**
+```
+Input:  name_map + book_structure
+Output: global_lore skeleton + timeline_framework skeleton
+```
+- `book_metadata` → จาก source.json + chapter headings
+- `timeline_framework` → จาก book_structure (derive book/chapter structure)
+- `global_lore.characters[*].description` → เว้นว่าง (Phase 4 Profiler จะเติม)
+- `global_lore.characters[*].character_arc` → เว้นว่าง (Phase 4 Cross-Ref จะเติม)
 
-**Files to modify:**
-- `engine/phase3_global_lore.py` — split `build_global_lore_prompt()` into engine-only + LLM-sample paths
-- `mcp_server/server.py` — update `extract_global_lore` prompt to accept `sample_only=true`
+### Why this preserves quality
+
+| Concern | Answer |
+|---|---|
+| "Spyglass" จะถูก detect ไหม? | ✅ LLM ยังอ่านทั้งเล่ม — เห็น "Spyglass said..." → รู้ว่านี่คือตัวละคร |
+| Description characters หายไป? | ไม่หาย — ย้ายไป Phase 4 Profiler ซึ่ง extract ต่อตอน ละเอียดกว่า |
+| Name map quality ลดลง? | ดีขึ้น — LLM focus แค่ชื่ออย่างเดียว ไม่ต้องแบ่ง attention ไปเขียน description |
+| Timeline หายไป? | ไม่หาย — derive จาก chapter headings (engine) แม่นยำกว่า LLM เดา |
+
+### Edge cases
+
+| Edge case | Handling |
+|---|---|
+| นิยายที่ไม่มี `Mr./Captain` เลย (ทุกคนเรียกชื่อเปล่า) | Engine candidates = เฉพาะ capitalized words; LLM batch จะ catch ส่วนที่เหลือ |
+| ตัวละครถูกเรียก 3-4 ชื่อสลับกันทั้งเล่ม | LLM batch อ่านทั้งเล่ม → มองเห็น pattern การสลับชื่อ |
+| ชื่อตัวละครเป็นภาษาต่างประเทศ (ไม่เข้า regex) | LLM batch คือ safety net — ตรวจจับจาก context ว่าคำนี้คือชื่อคน |
+| นิยายสั้นมาก (<10 chapters) | Phase 3.1b ต้นทุนต่ำอยู่แล้ว — ใช้ full prompt ได้เลย ไม่ต้อง batch |
+
+### What Could Go Wrong
+
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| LLM batch มองข้ามชื่อปลอมเพราะ focus แค่ชื่อ | Low | HIGH — เสียตัวละคร | Prompt ให้ LLM flag "any word used as a name, even if it looks like an object" |
+| Engine grep ได้ชื่อซ้ำ/สะกดผิด | Medium | LOW | LLM batch จะ canonicalize + deduplicate |
+| Chapter appearance จาก grep คลาดเคลื่อน (เจอชื่อในความหมายอื่น) | Medium | LOW | LLM batch verify + Phase 3.2 auto_verify_names cross-check |
 
 ---
 
-### Change 2: Merge 3-Pass → 2-Pass (33% call reduction)
+## Change 2: Phase 4 — Adaptive 2/3-Pass
 
-**Current:** Architect → Profiler → Chronicler = 3 LLM calls per chapter
+### ปัญหาที่ต้องแก้
 
-**Proposed:** Extract → Cross-Reference = 2 LLM calls per chapter
+3-Pass (Architect → Profiler → Chronicler) อ่าน chapter text ซ้ำ:
+- Architect อ่าน chapter text → extract scenes + plot points
+- Profiler อ่าน chapter text **เดิม** → extract characters + behaviors + items
+- Chronicler อ่าน Architect+Profiler output → cross-chapter connections
+
+SA Combined path (มีอยู่แล้วใน repo) ทำ Architect+Profiler ใน call เดียว — พิสูจน์ว่า combine ได้
+
+แต่มีเคสที่ combine แล้วคุณภาพตก: **chapter ที่ยาวมาก (>15KB)** — LLM ต้องทำสองอย่างพร้อมกัน (structure scenes + profile characters) ใน prompt เดียว โอกาสพลาดสูงขึ้น
+
+### วิธีแก้: Adaptive Threshold
 
 ```
-Pass 1 — EXTRACT (merged Architect + Profiler):
-  Input:  chapter_text + name_map + global_lore_summary
-  Output: scenes + characters + behaviors + items + dialogue + character_states
-  Schema: same as current sa_combined_prompt.md (already exists)
+ถ้า chapter_text < 15,000 chars:
+  → 2-Pass (SA Combined path)
+     Pass 1: EXTRACT — chapter_text + name_map → scenes + characters + behaviors + items + dialogue
+     Pass 2: CROSS-REF — Pass1 output + prev_chapters_summary → connections + lore discoveries
 
-Pass 2 — CROSS-REF (merged Chronicler + Sliding Window):
-  Input:  Pass 1 output + previous 2 chapters' summaries + global_lore_excerpt
-  Output: cross_chapter_connections + lore_discoveries
-  Schema: same as current pass13_chronicler_prompt.md
+ถ้า chapter_text >= 15,000 chars:
+  → 3-Pass (เดิม)
+     Pass 1: Architect — chapter_text → scenes + plot points
+     Pass 2: Profiler — chapter_text + scenes → characters + behaviors + items
+     Pass 3: Chronicler — Architect+Profiler output + prev_chapters_summary → connections
 ```
 
-**Why this works:** `prompts/sa_combined_prompt.md` already proves that Architect+Profiler can merge into one call. The schema covers ALL fields from both passes:
-- `scene_details` (from Architect)
-- `key_plot_points` (from Architect)
-- `characters_present` (from Profiler)
-- `character_behaviors` (from Profiler)
-- `items_of_interest` (from Profiler)
-- `dialogue_summaries` (from Profiler)
-- `character_states` (from Profiler)
+**สำหรับ heans (39 chapters):**
+- <15KB: ~25 chapters → 2-Pass = 50 calls
+- ≥15KB: ~14 chapters → 3-Pass = 42 calls
+- Total: **92 calls** (vs 117 calls เดิม = **ลด 21%**)
 
-The separate 3-Pass was designed for weaker models that couldn't produce complex nested JSON reliably. Modern models (GPT-4, Claude 3.5, DeepSeek v4) handle combined schema fine.
+**สำหรับนิยายทั่วไป (chapter สั้น):**
+- ส่วนใหญ่ <15KB → 2-Pass เกือบทั้งหมด = **ลด ~33%**
 
-**Quality guard:** `MicroFactsFinal.@model_validator` still checks `in_scene_id` references → hallucination protection unchanged.
+### ทำไม SA Combined ใช้ได้ (ไม่ใช่ของด้อยคุณภาพ)
 
-**Files to modify:**
-- `prompts/pass11_architect_prompt.md` → merge into sa_combined
-- `prompts/pass12_profiler_prompt.md` → merge into sa_combined
-- `prompts/sa_combined_prompt.md` → make this the DEFAULT (rename to `pass1_extract_prompt.md`)
-- `prompts/pass13_chronicler_prompt.md` → add `previous_chapters_summary` input
-- `mcp_server/server.py` → remove `analyze_architect` + `analyze_profiler` prompts, rename `analyze_chronicler`
+`prompts/sa_combined_prompt.md` (v3.7) ถูกออกแบบมาหลัง 3-Pass — เป็น evolution ไม่ใช่ fallback:
+
+- Schema ครอบคลุม **ทุก field** ที่ Architect+Profiler มี:
+  - `scene_details` ← Architect
+  - `key_plot_points` ← Architect  
+  - `characters_present` ← Profiler
+  - `character_behaviors` ← Profiler
+  - `items_of_interest` ← Profiler
+  - `dialogue_summaries` ← Profiler
+  - `character_states` ← Profiler
+- บวกเพิ่ม `character_states` ที่ 3-Pass ไม่มี
+
+ที่ผ่านมาใช้ SA Combined เฉพาะตอน rate limited — ไม่เคยมีปัญหาคุณภาพตก
+
+### การ merge Chronicler + Sliding Window
+
+แทนที่จะมี Sliding Window แยกต่างหาก (อ่าน 5 chapters/batch → หา cross-chapter arcs):
+
+```
+Pass 2 (CROSS-REF) ทุกตอนได้รับ:
+  - Pass1 output ของตอนปัจจุบัน (scenes, characters, behaviors, items)
+  - summary ของ 2-3 ตอนก่อนหน้า (auto-generated จาก key_plot_points)
+  - global_lore_excerpt (name_map + timeline)
+  
+→ LLM เห็นภาพต่อเนื่องโดยไม่ต้องมี batch processing แยก
+```
+
+**Auto-summary สร้างยังไง (0 tokens):**
+```python
+summary = {
+    "chapter": "EP005",
+    "heading": "CHAPTER V. ANOTHER BLACK STRING",
+    "key_events": [first 3 key_plot_points],  # จาก Pass1 output
+    "characters_present": [...],               # จาก Pass1 output
+    "new_characters_introduced": [...],        # เทียบกับ name_map
+}
+# ความยาว ~500 chars ต่อตอน — เล็กมากเทียบกับ chapter text
+```
+
+### Edge cases
+
+| Edge case | Handling |
+|---|---|
+| Chapter แรก (EP001) — ไม่มี previous chapters | summary = empty → LLM รู้ว่านี่คือตอนแรก |
+| Chapter ที่ตัวละครใหม่โผล่ครั้งแรก | auto-summary flag `new_characters_introduced` → Cross-Ref รู้ว่านี่คือ first appearance |
+| Chapter ที่ไม่มี dialogue เลย | auto-summary ยาวพอ ๆ กับ chapter ที่มี dialogue — `key_plot_points` ยังมี |
+| นิยายที่ timeline กระโดด (flashback) | auto-summary ไม่ cover — แต่ Chronicler prompt มี `global_lore_excerpt` + timeline_framework อยู่แล้ว |
+
+### What Could Go Wrong
+
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| 2-Pass on large chapter → LLM output ครึ่ง ๆ กลาง ๆ | Medium | MED | Threshold ป้องกัน — chapters >15KB ใช้ 3-Pass |
+| Auto-summary สั้นเกิน → Cross-Ref จับ arc ไม่ได้ | Low | MED | 3 `key_plot_points` + character list = พอสำหรับ LLM เข้าใจ context |
+| Summary จากตอนที่ LLM hallucinate → propagate error | Medium | HIGH | `MicroFactsFinal.@model_validator` ตรวจ scene_id references ก่อนใช้เป็น summary |
 
 ---
 
-### Change 3: Eliminate Phase 4-P2 Sliding Window (100% reduction)
+## Change 3: Pipeline Architecture — ทำไมต้อง LLM แบก
 
-**Current:** Separate LLM pass reading 5-chapter batches of micro_facts
+นี่ไม่ใช่ optimization โดยตรง แต่เป็น **กรอบคิด** ที่อธิบายว่าทำไม optimization ต้องระวัง:
 
-**Proposed:** Fold into Pass 2 (Cross-Ref) by feeding previous-chapter summaries
-
-Instead of:
 ```
-Sliding Window: read micro_facts EP001-EP005 → find arcs
-Sliding Window: read micro_facts EP006-EP010 → find arcs
-...
+┌─────────────────────────────────────────────────┐
+│                  MENNZLORE                       │
+│                                                  │
+│  ┌──────────┐    ┌──────────────────────────┐   │
+│  │  ENGINE  │    │         LLM              │   │
+│  │ (30%)    │    │        (70%)             │   │
+│  │          │    │                           │   │
+│  │ download │    │ detect "Spyglass" = name  │   │
+│  │ split    │    │ Heans = Sir William       │   │
+│  │ grep     │    │ mood = tense              │   │
+│  │ merge    │    │ foreshadowing             │   │
+│  │ validate │    │ character arc             │   │
+│  │ render   │    │ lore discoveries          │   │
+│  └──────────┘    └──────────────────────────┘   │
+│       ▲                      ▲                   │
+│       │                      │                   │
+│   งานที่ถูก 100%          งานที่ผิดได้            │
+│   ไม่มีวันผิด             ต้อง validate          │
+└─────────────────────────────────────────────────┘
 ```
 
-Do:
-```
-Pass 2 (EP005): input = EP005 Pass1 output + EP003+EP004 summaries
-Pass 2 (EP006): input = EP006 Pass1 output + EP004+EP005 summaries
-```
+**Engine = ฐานรากที่แข็ง** — งาน mechanical ทั้งหมด
+**LLM = สมองที่เข้าใจภาษา** — งานที่ต้องใช้ปัญญา
 
-Each Pass 2 already has access to the current chapter's full extraction. Adding 2-3 previous chapter summaries gives it enough context to track character arcs, foreshadowing, and recurring motifs — without a separate batch-processing system.
-
-**Quality guard:** The previous-chapter summaries are auto-generated from each chapter's `key_plot_points` (already extracted in Pass 1). No new LLM extraction needed.
-
-**Files to modify:**
-- Delete: `prompts/pass2_sliding_window_prompt.md` (or archive as `prompts/_archived/`)
-- Remove: `synthesize_window` MCP prompt from server.py
+Optimization ที่ถูกต้องคือ:
+- ✅ LLM ยังทำสิ่งที่มันทำได้คนเดียว — **ไม่ลด scope ความเข้าใจ**
+- ✅ ลดเฉพาะส่วนที่ LLM ทำซ้ำหรือ engine ทำแทนได้
+- ❌ NOT: ย้ายงานที่ต้องใช้ความเข้าใจภาษาไป engine
 
 ---
 
 ## Implementation Sequence
 
-| Step | What | Risk | Tokens Saved |
-|---|---|---|---|
-| **1** | Rename `sa_combined` → `pass1_extract` as default | Low — already tested | 33% of Phase 4 |
-| **2** | Add `previous_chapters_summary` to Chronicler prompt | Low — additive change | Enables Step 3 |
-| **3** | Remove Sliding Window | Medium — verify on 3-novel test | 100% of Phase 4-P2 |
-| **4** | Split Phase 3.1 into Engine+LLM | Medium — affects name_map quality | 75% of Phase 3.1 |
-| **5** | Remove `analyze_architect` + `analyze_profiler` MCP prompts | Low — cleanup | 0 (DX improvement) |
+| Step | What | Risk | Tokens Saved | Verification |
+|---|---|---|---|---|
+| **1** | Add `previous_chapters_summary` generator (engine) | Low | 0 (enabler) | Unit test: summary length < 1000 chars |
+| **2** | Update Chronicler prompt to accept summaries | Low | 0 (enabler) | Smoke test 1 chapter: output schema valid |
+| **3** | Make SA Combined the DEFAULT for chapters <15KB | Low-Med | 21-33% of Phase 4 | Run 3-novel test, compare character count |
+| **4** | Remove Sliding Window (fold into Cross-Ref) | Medium | 100% of Phase 4-P2 | Compare Conn-IDs before/after |
+| **5** | Split Phase 3.1 into Engine+LLM (names-only prompt) | Medium | 50% of Phase 3.1 | Verify "Spyglass"-type names detected |
+| **6** | Remove `analyze_architect` + `analyze_profiler` MCP prompts | Low | 0 (cleanup) | Old path still callable via direct prompt text |
 
-**Verification gate:** After each step, run the 3-novel stress test (Burroughs PG #62, Burks PG #29416, Doyle PG #244). Compare master_lorebook quality (character count, event count, hallucination rate) with baseline.
+**Verification gate after each step:** 3-novel stress test (PG #62 Burroughs, PG #29416 Burks, PG #244 Doyle) — compare:
+- Character count (ห้ามลด)
+- Event count (ห้ามลดเกิน 10%)
+- Hallucination rate (`in_scene_id` validation errors)
+- Disguised name detection (Doyle มี alias-heavy characters)
 
 ---
 
 ## What Does NOT Change
 
-- **Name Map reference in every Phase 4 prompt** — hallucination protection unchanged
-- **`MicroFactsFinal.@model_validator`** — cross-field scene_id validation unchanged
-- **Phase 7-16 Engine pipeline** — deterministic, no tokens anyway
-- **Saga Mode + YouTube pipeline** — unaffected
-
----
-
-## Risk: What Could Degrade
-
-| Risk | Mitigation |
+| Component | เพราะ |
 |---|---|
-| Combined prompt too complex → LLM misses fields | Keep schema identical to sa_combined (already proven); add `required` field validation |
-| Previous-chapter summaries too short to catch arcs | Auto-summary = first 3 `key_plot_points` + character list; test on Doyle (complex timeline) |
-| Engine-only name_map misses aliases | Phase 3.1b LLM step can suggest aliases from sample chapters; merge with grep results |
-| Global Lore theme/genre less accurate from sample-only | Phase 7 Assemble will derive theme from micro_facts 39 chapters → more granular anyway |
+| Name Map ในทุก Phase 4 prompt | Hallucination protection — LLM ต้องรู้ว่าใครเป็นใคร |
+| `MicroFactsFinal.@model_validator` | Cross-field scene_id validation — ด่านสุดท้ายกัน hallucination |
+| LLM อ่านทั้งเล่มใน Phase 3.1 | ต้องเห็น context ทั้งหมดถึงจะ detect disguised names |
+| Phase 7-16 Engine pipeline | Deterministic — ไม่ใช้ LLM ตั้งแต่แรก |
+| Saga Mode + YouTube pipeline | แยก architecture — unaffected |
 
 ---
 
 ## Rollback Plan
 
-All changes are prompt-level (not engine). If quality degrades:
-1. Revert prompt files from git
-2. Re-enable `analyze_architect` + `analyze_profiler` MCP prompts
-3. Old 3-Pass path still works because engine code unchanged
+ทุก change เป็น **prompt-level** (ไม่แก้ engine logic):
+1. Revert prompt files from git → กลับเป็น 3-Pass + full Global Lore ทันที
+2. Old MCP prompts (`analyze_architect`, `analyze_profiler`) ยังอยู่ใน server.py (แค่ไม่เป็น default)
+3. Engine code unchanged — `merge_to_micro_facts.py`, `assemble_generic.py` รับ input format เดิม
 
 ---
 
-*Drafted: 2026-06-10*
+## Open Questions
+
+1. **Threshold สำหรับ adaptive 2/3-Pass:** 15,000 chars — ควร calibrate จาก stress test จริง
+2. **auto-summary format:** เอา `key_plot_points` 3 ตัวพอไหม หรือควร include `character_behaviors` ด้วย?
+3. **Phase 3.1b batching:** นิยาย >50 chapters — ควร batch LLM calls หรือทำ single call? (prompt อาจใหญ่เกิน)
+4. **Prompt caching:** MCP prompts ใช้ system/user separation ได้ไหม? ถ้าได้ — schema/rules ถูก cache → ประหยัด token อีก 20%
+
+---
+
+*Drafted: 2026-06-10 | Revised: 2026-06-10*
 *Target release: v5.1*
