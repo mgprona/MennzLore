@@ -25,6 +25,12 @@
 
 ---
 
+## นิยามของ Subagent (Subagent Definition)
+
+ในบริบทของ pipeline นี้ **"Subagent"** หมายถึง **Claude/AI session ที่ถูกสร้างแยก (spawned)** ผ่าน MCP tool `delegate_task` (หรือ API call แยกต่างหาก) เพื่อรับผิดชอบประมวลผลบทประพันธ์รายตอน (Chapter-by-Chapter) โดย subagent นี้สามารถเรียกใช้ MCP tools (เช่น file reading) เพื่อนำข้อมูลมาวิเคราะห์ด้วยตนเอง ซึ่งทำให้เกิด overhead จาก tool call สูง แผนงานนี้จึงต้องจัดการข้อจำกัดของเครื่องมือและควบคุมไม่ให้เกิด tool call ซ้ำซ้อน
+
+---
+
 ## สิ่งที่ pipeline ปัจจุบันทำซ้ำซ้อน
 
 LLM อ่านข้อมูลชุดเดียวกันหลายรอบเพื่อ extract ข้อมูลที่ทับซ้อนกัน:
@@ -104,6 +110,7 @@ Output: global_lore skeleton + timeline_framework skeleton
 - `timeline_framework` → จาก book_structure (derive book/chapter structure)
 - `global_lore.characters[*].description` → เว้นว่าง (Phase 4 Profiler จะเติม)
 - `global_lore.characters[*].character_arc` → เว้นว่าง (Phase 4 Cross-Ref จะเติม)
+- **การแก้ไขที่สำคัญ (Hidden Work):** ปรับปรุงฟังก์ชัน `write_global_lore_outputs()` ใน engine เพื่อให้รองรับการเขียนเฉพาะ `name_map` ลง skeleton file ได้ทันทีโดยไม่ต้องรอ JSON ครบ 4 ไฟล์เหมือนเดิม
 
 ### Why this preserves quality
 
@@ -368,19 +375,28 @@ def normalize_sa_json(data, kind):
     # Remap 'speaker'+'listener' → 'dialogue_id'+'participants'
 ```
 
-**Rationale:** LLM จะผิด field names เสมอ — ดีกว่า accept ความจริงนี้แล้ว fix ที่ engine ดีกว่าพยายาม enforce ที่ prompt (ซึ่งไม่เคยสำเร็จ 100%)
+**Rationale:** (Defense in Depth) ต้องใช้ร่วมกัน **และ** (ทั้งคู่) เสมอ โดย Prompt Embedding ช่วยลด "rate of failure" และ normalize_sa_json ใน engine จะเป็น "safety net" คอยตรวจสอบความถูกต้องขั้นสุดท้าย ไม่ใช่อย่างใดอย่างหนึ่ง
+
+---
+
+## Change 5: Prompt Caching (Promoted from Open Questions)
+
+การประหยัด Token และลด latency ผ่าน Cache Control:
+- กำหนดให้ MCP Prompts ใช้ system/user separation ใน API call
+- นำ Pydantic schema, system rules, และ static templates มาใส่ไว้ใน system instruction เพื่อกระตุ้นให้ API Gateway เปิดใช้งาน Prompt Caching (เช่น `cache-control: {"type": "ephemeral"}` ของ Anthropic API)
+- **ผลลัพธ์:** ลด Token input ที่ซ้ำกันในส่วนของ schema และกฎระบบได้สูงสุด 20-30% ต่อหนึ่ง API call
 
 ### Updated Implementation Sequence
 
 | Step | What | Risk | Tokens Saved | Learned from Baseline |
 |---|---|---|---|---|
-| **0** | Add `normalize_sa_json()` in engine | Low | 0 | ปัญหา #1 — ป้องกัน merge fail |
-| **1** | Add `previous_chapters_summary` generator | Low | 0 | — |
-| **2** | Update Chronicler prompt with exact field names | Low | 0 | ปัญหา #1 — embed schema |
-| **3** | Make SA Combined DEFAULT + embed schema | Low-Med | 21-33% | ปัญหา #4 — ลด tool calls |
-| **4** | Remove Sliding Window | Medium | 100% Phase 4-P2 | — |
-| **5** | Split Phase 3.1 into Engine+LLM | Medium | 50% Phase 3.1 | — |
-| **6** | Streamline subagent toolsets → `["file"]` only | Low | 30-50% overhead | ปัญหา #4 — ลด tool-call overhead |
+| **1** | Streamline subagent toolsets → `["file"]` only | Low | 30-50% overhead | ปัญหา #4 — ลด tool-call overhead (ย้ายขึ้นมาเพื่อตัด bottleneck หลักทันที) |
+| **2** | Add `previous_chapters_summary` generator | Low | 0 | — |
+| **3** | Update Chronicler prompt with exact field names | Low | 0 | ปัญหา #1 — embed schema |
+| **4** | Make SA Combined DEFAULT + embed schema | Low-Med | 21-33% | ปัญหา #4 — ลด tool calls |
+| **5** | Remove Sliding Window | Medium | 100% Phase 4-P2 | — |
+| **6** | Split Phase 3.1 into Engine+LLM | Medium | 50% Phase 3.1 | — |
+| **7** | Implement Prompt Caching (Change 5) | Low | 20-30% | ประหยัด tokens จาก static instruction |
 
 ### Updated Token Estimate (from Baseline)
 
@@ -395,12 +411,15 @@ def normalize_sa_json(data, kind):
 
 | Step | What | Risk | Tokens Saved | Verification |
 |---|---|---|---|---|
-| **1** | Add `previous_chapters_summary` generator (engine) | Low | 0 (enabler) | Unit test: summary length < 1000 chars |
-| **2** | Update Chronicler prompt to accept summaries | Low | 0 (enabler) | Smoke test 1 chapter: output schema valid |
-| **3** | Make SA Combined the DEFAULT for chapters <15KB | Low-Med | 21-33% of Phase 4 | Run 3-novel test, compare character count |
-| **4** | Remove Sliding Window (fold into Cross-Ref) | Medium | 100% of Phase 4-P2 | Compare Conn-IDs before/after |
-| **5** | Split Phase 3.1 into Engine+LLM (names-only prompt) | Medium | 50% of Phase 3.1 | Verify "Spyglass"-type names detected |
-| **6** | Remove `analyze_architect` + `analyze_profiler` MCP prompts | Low | 0 (cleanup) | Old path still callable via direct prompt text |
+| **0** | Add `normalize_sa_json()` in engine | Low | 0 | Check if baseline novels merge 100% without repair.py |
+| **1** | Streamline subagent toolsets → `["file"]` only | Low | 30-50% overhead | Monitor token consumption per chapter |
+| **2** | Add `previous_chapters_summary` generator (engine) | Low | 0 (enabler) | Unit test: summary length < 1000 chars |
+| **3** | Update Chronicler prompt to accept summaries | Low | 0 (enabler) | Smoke test 1 chapter: output schema valid |
+| **4** | Make SA Combined the DEFAULT for chapters <15KB | Low-Med | 21-33% of Phase 4 | Run 3-novel test, compare character count |
+| **5** | Remove Sliding Window (fold into Cross-Ref) | Medium | 100% of Phase 4-P2 | Compare Conn-IDs before/after |
+| **6** | Split Phase 3.1 into Engine+LLM (names-only prompt) | Medium | 50% of Phase 3.1 | Verify "Spyglass"-type names detected |
+| **7** | Implement Prompt Caching (Change 5) | Low | 20-30% | Verify system/user message split supports caching |
+| **8** | Remove `analyze_architect` + `analyze_profiler` MCP prompts | Low | 0 (cleanup) | Old path still callable via direct prompt text |
 
 **Verification gate after each step:** 3-novel stress test (PG #62 Burroughs, PG #29416 Burks, PG #244 Doyle) — compare:
 - Character count (ห้ามลด)
@@ -436,7 +455,6 @@ def normalize_sa_json(data, kind):
 1. **Threshold สำหรับ adaptive 2/3-Pass:** 15,000 chars — ควร calibrate จาก stress test จริง
 2. **auto-summary format:** เอา `key_plot_points` 3 ตัวพอไหม หรือควร include `character_behaviors` ด้วย?
 3. **Phase 3.1b batching:** นิยาย >50 chapters — ควร batch LLM calls หรือทำ single call? (prompt อาจใหญ่เกิน)
-4. **Prompt caching:** MCP prompts ใช้ system/user separation ได้ไหม? ถ้าได้ — schema/rules ถูก cache → ประหยัด token อีก 20%
 
 ---
 

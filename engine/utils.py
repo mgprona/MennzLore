@@ -147,3 +147,64 @@ def update_episode_cache(project_dir: str, prefix: str, ep_num: str, raw_filepat
         }
         write_json(state_path, state)
 
+
+def generate_previous_chapters_summary(project_dir: str, prefix: str, current_ep_num: str, limit: int = 3) -> List[Dict[str, Any]]:
+    """
+    Step 2: Generate auto-summaries of the previous N chapters.
+    Calculates key events, characters, and new introductions without LLM cost.
+    """
+    # Parse episode number to integer
+    match = re.search(r'\d+', current_ep_num)
+    if not match:
+        return []
+    current_idx = int(match.group(0))
+    
+    micro_dir = os.path.join(project_dir, "micro_facts")
+    if not os.path.isdir(micro_dir):
+        micro_dir = os.path.join(project_dir, "analysis", "micro_facts")
+        
+    # Track characters seen prior to the previous chapters to detect "newly introduced"
+    all_seen_chars = set()
+    
+    # 1. Scan from EP001 up to current_idx - limit - 1 to build baseline seen characters
+    for idx in range(1, current_idx - limit):
+        ep_label = f"EP{idx:03d}"
+        fpath = os.path.join(micro_dir, f"{prefix}_{ep_label}_micro_facts.json")
+        if os.path.exists(fpath):
+            ep_data = load_json(fpath)
+            for c in ep_data.get("characters_present", []):
+                all_seen_chars.add(c)
+                
+    summaries = []
+    # 2. Extract summaries for the last `limit` chapters
+    for idx in range(max(1, current_idx - limit), current_idx):
+        ep_label = f"EP{idx:03d}"
+        fpath = os.path.join(micro_dir, f"{prefix}_{ep_label}_micro_facts.json")
+        if not os.path.exists(fpath):
+            continue
+            
+        ep_data = load_json(fpath)
+        kpps = ep_data.get("key_plot_points", [])
+        # Get first 3 key events summary
+        key_events = [k.get("description", "") for k in kpps[:3] if k.get("description")]
+        
+        present = ep_data.get("characters_present", [])
+        
+        # Detect new characters introduced in this specific chapter
+        new_chars = []
+        for c in present:
+            if c not in all_seen_chars:
+                new_chars.append(c)
+                all_seen_chars.add(c)
+                
+        summaries.append({
+            "chapter": ep_label,
+            "chapter_title": ep_data.get("chapter_title", ""),
+            "key_events": key_events,
+            "characters_present": present,
+            "new_characters_introduced": new_chars
+        })
+        
+    return summaries
+
+

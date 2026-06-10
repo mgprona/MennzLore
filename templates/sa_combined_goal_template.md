@@ -44,6 +44,10 @@ Extract ALL events, characters, behaviors, scenes, items, and dialogue from this
 - `items_of_interest` — NOT `items_mentioned`
 - `dialogue_summaries` — NOT `dialogue`
 
+### ⚠️ CRITICAL TOOL RESTRICTIONS
+- Do NOT use any search_files, grep_search, list_dir, or database tools.
+- Do NOT search the repository or browse files. Your context is limited ONLY to the chapter text provided.
+
 ### VALIDATION (run before returning)
 - [ ] All `point_id`s unique (KPP-001, KPP-002...)
 - [ ] All `scene_id`s unique, every item references one

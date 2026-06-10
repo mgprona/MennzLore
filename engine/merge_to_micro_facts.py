@@ -27,6 +27,72 @@ from lore_models import MicroFactsFinal
 from engine.utils import load_json, write_json
 
 
+def normalize_sa_json(merged: dict) -> dict:
+    """Fix common subagent field name mistakes before Pydantic validation."""
+    # 1. scene_details[].order (missing integer)
+    scenes = merged.get("scene_details", [])
+    if isinstance(scenes, list):
+        for i, scene in enumerate(scenes):
+            if isinstance(scene, dict):
+                if "order" not in scene or scene["order"] is None:
+                    scene["order"] = i + 1
+
+    # 2 & 3. dialogue_summaries (missing key_quotes, dialogue_id)
+    dialogues = merged.get("dialogue_summaries", [])
+    if isinstance(dialogues, list):
+        for i, diag in enumerate(dialogues):
+            if isinstance(diag, dict):
+                if "key_quotes" not in diag or diag["key_quotes"] is None:
+                    diag["key_quotes"] = []
+                if "dialogue_id" not in diag or not diag["dialogue_id"]:
+                    speaker = diag.get("speaker", "Unknown")
+                    listener = diag.get("listener", "Unknown")
+                    diag["dialogue_id"] = f"DI-{(i+1):03d}"
+                    if "participants" not in diag:
+                        diag["participants"] = [speaker, listener]
+
+    # 4 & 5 & 7. lore_discoveries (discovery -> description, revealed_by -> source, missing evidence_quote)
+    lores = merged.get("lore_discoveries", [])
+    if isinstance(lores, list):
+        for i, lore in enumerate(lores):
+            if isinstance(lore, dict):
+                # discovery -> description
+                if "discovery" in lore and ("description" not in lore or not lore["description"]):
+                    lore["description"] = lore.pop("discovery")
+                # revealed_by -> source
+                if "revealed_by" in lore and ("source" not in lore or not lore["source"]):
+                    lore["source"] = lore.pop("revealed_by")
+                # default empty fields
+                if "discovery_id" not in lore or not lore["discovery_id"]:
+                    lore["discovery_id"] = f"LD-{(i+1):03d}"
+                if "description" not in lore or not lore["description"]:
+                    lore["description"] = "No description provided"
+                if "source" not in lore or not lore["source"]:
+                    lore["source"] = "Unknown"
+                if "significance" not in lore or not lore["significance"]:
+                    lore["significance"] = "Unknown"
+                if "evidence_quote" not in lore or lore["evidence_quote"] is None:
+                    lore["evidence_quote"] = ""
+
+    # 6. cross_chapter_connections[].connection_id (missing, use connection)
+    connections = merged.get("cross_chapter_connections", [])
+    if isinstance(connections, list):
+        for i, conn in enumerate(connections):
+            if isinstance(conn, dict):
+                if "connection" in conn and ("connection_id" not in conn or not conn["connection_id"]):
+                    conn["connection_id"] = conn.pop("connection")
+                if "connection_id" not in conn or not conn["connection_id"]:
+                    conn["connection_id"] = f"CC-{(i+1):03d}"
+                if "description" not in conn or not conn["description"]:
+                    conn["description"] = "No connection description"
+                if "connection_type" not in conn or not conn["connection_type"]:
+                    conn["connection_type"] = "Unknown"
+                if "evidence_quote" not in conn or conn["evidence_quote"] is None:
+                    conn["evidence_quote"] = ""
+
+    return merged
+
+
 def self_correct_micro_facts(merged: dict) -> dict:
     scenes = merged.get("scene_details", [])
     valid_scene_ids = [s.get("scene_id") for s in scenes if isinstance(s, dict) and s.get("scene_id")]
@@ -271,6 +337,9 @@ def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None,
         "total_scenes_count": len(arch.get("scene_details", [])),
         "total_dialogues_count": len(prof.get("dialogue_summaries", [])),
     }
+
+    # Run Schema Normalization (Step 0)
+    merged = normalize_sa_json(merged)
 
     # Run Self-Correction & Healing Agent
     merged = self_correct_micro_facts(merged)

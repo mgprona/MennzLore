@@ -74,22 +74,29 @@ python engine/split_chapters.py <project_dir> [prefix]
 
 ---
 
-## Phase 4 — 3-Pass Analysis (หัวใจ LLM)
+## Phase 4 — Adaptive 2/3-Pass Analysis (หัวใจ LLM — v5.1)
 
-แต่ละตอนผ่าน 3 pass เรียงกัน โดย output ของ pass ก่อนหน้าเป็น input ของ pass ถัดไป
-ทุก entry ผูกกับ `scene_id` เพื่อให้ตรวจสอบย้อนได้ (กัน hallucination)
+เพื่อประสิทธิภาพสูงสุดและประหยัด tokens ~50-70% ให้ตรวจสอบขนาดตัวอักษรของบทประพันธ์ (Chapter Text Length) แล้วเลือกใช้กระบวนการที่เหมาะสม:
 
-| Pass | บทบาท | Prompt | Schema | จับอะไร |
-|:-----|:------|:-------|:-------|:--------|
-| 1.1 | **Architect** | `prompts/pass11_architect_prompt.md` | `schemas/architect.schema.json` | ฉาก (`scene_details`) + เหตุการณ์หลัก (`key_plot_points`) |
-| 1.2 | **Profiler** | `prompts/pass12_profiler_prompt.md` | `schemas/profiler.schema.json` | ตัวละคร, พฤติกรรม, ไอเทม, บทสนทนา |
-| 1.3 | **Chronicler** | `prompts/pass13_chronicler_prompt.md` | `schemas/chronicler.schema.json` | เชื่อมข้ามตอน + lore discoveries |
+### 1. กรณีบทประพันธ์สั้น (Chapter Text < 15,000 ตัวอักษร) — ใช้ 2-Pass (DEFAULT)
+* **Pass 1: EXTRACT (SA Combined)**
+  * Prompt: `prompts/sa_combined_prompt.md` (v3.7)
+  * หน้าที่: สกัด scenes, key_plot_points, characters, behaviors, items, และ dialogue ใน 1 call
+* **Pass 2: CROSS-REF (SA Lore)**
+  * Prompt: `prompts/sa_lore_prompt.md`
+  * หน้าที่: วิเคราะห์ความเชื่อมโยงกับ global lore และสรุปประวัติตอนก่อนหน้าจากตัวแปร `{previous_chapters_summary}`
 
-**Merge:** รวม 3 pass → `micro_facts/<prefix>_EPxxx_micro_facts.json`
+### 2. กรณีบทประพันธ์ยาว (Chapter Text ≥ 15,000 ตัวอักษร) — ใช้ 3-Pass (แบบเดิม)
+* **Pass 1: Architect** -> Prompt: `prompts/pass11_architect_prompt.md` -> หา scenes + plot points
+* **Pass 2: Profiler** -> Prompt: `prompts/pass12_profiler_prompt.md` -> สกัด characters, behaviors, items
+* **Pass 3: Chronicler** -> Prompt: `prompts/pass13_chronicler_prompt.md` -> เชื่อมตอนเก่าโดยส่งตัวแปร `{previous_chapters_summary}`
 
+**Merge & Validate:**
+รวมเอาต์พุตของ 2-Pass หรือ 3-Pass เข้าด้วยกัน และรันตัวแปลง:
 ```bash
 python engine/merge_to_micro_facts.py <prefix> <ep_num> [base_dir]
 ```
+*ระบบจะเรียกใช้ `normalize_sa_json()` ใน engine อัตโนมัติเพื่อล้างคำผิดและทำการ validate ข้อมูลกับ Pydantic schema*
 
 `MicroFactsFinal` มี `@model_validator` ตรวจว่า `in_scene_id` ทุกตัวอ้างถึงฉากที่มีจริง —
 ถ้า LLM hallucinate scene reference จะ raise error ทันที (ดู `engine/lore_models.py`)
@@ -101,10 +108,9 @@ python engine/merge_to_micro_facts.py <prefix> <ep_num> [base_dir]
 
 ---
 
-## Phase 4-P2 — Sliding Window Synthesis
+## Phase 4-P2 — Sliding Window Synthesis (DEPRECATED / REMOVED)
 
-วิเคราะห์ทีละ batch (5 ตอน) เพื่อจับ character arc + foreshadowing ข้ามตอน
-Prompt: `prompts/pass2_sliding_window_prompt.md` → output `analysis/pass2/batch_*.json`
+ขั้นตอนการรัน Sliding Window แยกเป็น batch (5 ตอน) ได้ถูกยกเลิกแล้ว โดยเปลี่ยนไปใช้ระบบ **`previous_chapters_summary`** (ประมวลผลสรุปโดย Engine แบบ 0 tokens) และส่งต่อให้ Pass 2 (Cross-Ref) ของแต่ละตอนวิเคราะห์โดยตรง ช่วยประหยัด calls และประหยัด tokens ไปได้ 100% ในเฟสนี้
 
 ---
 

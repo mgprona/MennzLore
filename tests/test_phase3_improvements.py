@@ -78,7 +78,7 @@ class TestPhase3_1_Timeline(unittest.TestCase):
         self.assertTrue(os.path.exists(result["svg_path"]))
         
         # Verify SVG content
-        with open(result["svg_path"], "r") as f:
+        with open(result["svg_path"], "r", encoding="utf-8") as f:
             svg = f.read()
         self.assertIn("<svg", svg)
         self.assertIn("Story Timeline", svg)

@@ -17,6 +17,7 @@ for d in (ROOT_DIR, ENGINE_DIR):
         sys.path.insert(0, d)
 
 from fastmcp import FastMCP
+from fastmcp.prompts import Message
 
 from engine.merge_to_micro_facts import merge_to_micro_facts
 from engine.assemble_generic import assemble_lorebook
@@ -637,35 +638,57 @@ def get_micro_facts_example() -> str:
 # ─── PROMPTS ────────────────────────────────────────────────────────────────
 
 @mcp.prompt()
-def extract_global_lore(project_dir: str, prefix: str = "") -> str:
+def extract_global_lore(project_dir: str, prefix: str = "") -> list[Message]:
     """Phase 3.1 prompt: read all clean chapters and extract global lore, name map,
-    timeline framework, and chapter appearances. Reason over the returned prompt,
-    then persist your JSON result with the `save_global_lore` tool."""
-    from engine.phase3_global_lore import build_global_lore_prompt
+    timeline framework, and chapter appearances."""
+    from engine.phase3_global_lore import SYSTEM_PROMPT, _load_clean_chapters, _build_user_prompt, extract_name_candidates
     if not prefix:
         prefix = os.path.basename(project_dir.rstrip("/\\"))
-    return build_global_lore_prompt(project_dir, prefix)
+    chapters = _load_clean_chapters(project_dir, prefix)
+    candidates = extract_name_candidates(chapters)
+    user_content = _build_user_prompt(prefix, chapters, candidates)
+    return [
+        Message(SYSTEM_PROMPT, role="system"),
+        Message(user_content, role="user")
+    ]
 
 @mcp.prompt()
-def analyze_architect(chapter_text: str) -> str:
+def analyze_architect(chapter_text: str) -> list[Message]:
     """Get the prompt for Pass 1.1 (Architect) to extract scene structure."""
     template = read_repo_file("prompts/pass11_architect_prompt.md")
-    return template.replace("{chapter_text}", chapter_text)
+    system_content = template.replace("{chapter_text}", "Please analyze the chapter text provided in the user message below.")
+    return [
+        Message(system_content, role="system"),
+        Message(f"CHAPTER TEXT:\n{chapter_text}", role="user")
+    ]
 
 @mcp.prompt()
-def analyze_profiler(chapter_text: str, scene_list: str) -> str:
+def analyze_profiler(chapter_text: str, scene_list: str) -> list[Message]:
     """Get the prompt for Pass 1.2 (Profiler) to extract characters and behaviors."""
     template = read_repo_file("prompts/pass12_profiler_prompt.md")
-    return template.replace("{chapter_text}", chapter_text).replace("{scene_list}", scene_list)
+    system_content = (template
+                      .replace("{scene_list}", scene_list)
+                      .replace("{chapter_text}", "Please analyze the chapter text provided in the user message below."))
+    return [
+        Message(system_content, role="system"),
+        Message(f"CHAPTER TEXT:\n{chapter_text}", role="user")
+    ]
 
 @mcp.prompt()
-def analyze_chronicler(architect_json: str, profiler_json: str, global_lore_excerpt: str) -> str:
+def analyze_chronicler(architect_json: str, profiler_json: str, global_lore_excerpt: str, previous_chapters_summary: str = "") -> list[Message]:
     """Get the prompt for Pass 1.3 (Chronicler) to extract cross-chapter connections."""
     template = read_repo_file("prompts/pass13_chronicler_prompt.md")
-    return (template
-            .replace("{architect_json}", architect_json)
-            .replace("{profiler_json}", profiler_json)
-            .replace("{global_lore_excerpt}", global_lore_excerpt))
+    parts = template.split("## INPUT DATA")
+    system_rules = parts[0] + "\n## INPUT DATA\n"
+    user_inputs = (parts[1]
+                   .replace("{architect_json}", architect_json)
+                   .replace("{profiler_json}", profiler_json)
+                   .replace("{global_lore_excerpt}", global_lore_excerpt)
+                   .replace("{previous_chapters_summary}", previous_chapters_summary))
+    return [
+        Message(system_rules, role="system"),
+        Message(user_inputs, role="user")
+    ]
 
 @mcp.prompt()
 def synthesize_window(batch_range: str, episodes_data: str) -> str:
@@ -674,16 +697,29 @@ def synthesize_window(batch_range: str, episodes_data: str) -> str:
     return template
 
 @mcp.prompt()
-def sa_combined(chapter_text: str) -> str:
+def sa_combined(chapter_text: str) -> list[Message]:
     """Get the prompt for SA Combined: direct micro-facts extraction from a single chapter."""
     template = read_repo_file("prompts/sa_combined_prompt.md")
-    return template.replace("{chapter_text}", chapter_text)
+    system_content = template.replace("{chapter_text}", "Please analyze the chapter text provided in the user message below.")
+    return [
+        Message(system_content, role="system"),
+        Message(f"CHAPTER TEXT:\n{chapter_text}", role="user")
+    ]
 
 @mcp.prompt()
-def sa_lore(part1_output: str, global_lore_excerpt: str) -> str:
+def sa_lore(part1_output: str, global_lore_excerpt: str, previous_chapters_summary: str = "") -> list[Message]:
     """Get the prompt for SA Lore matching: match combined facts against global lore."""
     template = read_repo_file("prompts/sa_lore_prompt.md")
-    return template.replace("{part1_output}", part1_output).replace("{global_lore_excerpt}", global_lore_excerpt)
+    parts = template.split("## Usage")
+    system_rules = parts[0] + "\n## Usage\n"
+    user_inputs = (parts[1]
+                   .replace("{part1_output}", part1_output)
+                   .replace("{global_lore_excerpt}", global_lore_excerpt)
+                   .replace("{previous_chapters_summary}", previous_chapters_summary))
+    return [
+        Message(system_rules, role="system"),
+        Message(user_inputs, role="user")
+    ]
 
 
 if __name__ == "__main__":

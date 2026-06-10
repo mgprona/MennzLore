@@ -22,6 +22,7 @@ Requires:
 import json
 import os
 import sys
+import re
 import glob as _glob
 from datetime import datetime, timezone
 
@@ -34,102 +35,82 @@ except ImportError:
 
 # ── prompt ───────────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """You are a literary lore analyst. You read the full text of a novel split into chapters and produce four structured JSON artefacts.
+SYSTEM_PROMPT = """You are a literary lore analyst. You read the full text of a novel split into chapters and identify character names and aliases.
 
-RULES:
-1. Every fact must be sourced from the text — no invention.
-2. Preserve exact spelling of all proper nouns (character names, place names, creature names, invented words).
-3. lore_type values: "normal" (recognisable English word/name), "fantasy_name" (invented proper noun), "in_world_language" (word from the story's fictional language).
-4. episode IDs use format EP001, EP002, ... EP0NN (zero-padded 3 digits).
-5. Return ONLY a JSON object with exactly four top-level keys: global_lore, name_map, timeline_framework, chapter_appearance.
+Your output must be a clean JSON object containing character names, their aliases, and the chapters they appear in. Do NOT write descriptions, character arcs, or relationships. Focus strictly on names and aliases.
 """
 
-def _build_user_prompt(prefix: str, chapters: list[tuple[str, str]]) -> str:
+def extract_name_candidates(chapters: list[tuple[str, str]]) -> list[str]:
+    """
+    Phase 3.1a: Extract capitalized name candidates and prefix matches from raw chapter texts.
+    Returns a sorted list of unique candidates.
+    """
+    candidates = set()
+    prefix_pattern = re.compile(r'\b(?:Mr|Mrs|Ms|Miss|Captain|Sir|Lady|Lord|Dr|Col|Major|Lady|Miss)\.?\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?')
+    
+    cap_word_counts = {}
+    
+    for _, text in chapters:
+        for match in prefix_pattern.finditer(text):
+            candidates.add(match.group(0).strip())
+            
+        words = re.findall(r'\b[A-Z][a-zA-Z]+\b', text)
+        for w in words:
+            if len(w) <= 2:
+                continue
+            cap_word_counts[w] = cap_word_counts.get(w, 0) + 1
+            
+    for word, count in cap_word_counts.items():
+        if count >= 3:
+            candidates.add(word)
+            
+    stopwords = {"The", "And", "But", "For", "Yes", "Not", "You", "How", "What", "Then", "This", "They", "There", "Their", "That", "When", "Where", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December", "Gutenberg", "Project"}
+    filtered_candidates = [c for c in candidates if c not in stopwords]
+    
+    return sorted(filtered_candidates)
+
+def _build_user_prompt(prefix: str, chapters: list[tuple[str, str]], name_candidates: list[str]) -> str:
     """chapters = [(ep_id, text), ...]"""
     chapter_block = "\n\n".join(
         f"=== {ep_id} ===\n{text[:6000]}"   # truncate very long chapters to stay within context
         for ep_id, text in chapters
     )
+    candidates_str = ", ".join(name_candidates)
+    
     return f"""Project prefix: {prefix}
 Total chapters: {len(chapters)}
 
-CHAPTER TEXTS:
-{chapter_block}
+Here are known character names found by pattern matching (pattern candidates):
+[{candidates_str}]
+
+Read ALL chapters and identify:
+1. Any MISSING character names — especially disguised names (objects used as names, nicknames, titles used as names).
+2. All aliases for each character (e.g. 'Heans' = 'Sir William' = 'Sir William Heans').
+3. Which episodes each character appears in.
+
+Do NOT write descriptions, arcs, or relationships. Names and aliases ONLY. Engine will handle the rest.
 
 Produce exactly this JSON structure (no extra keys, no markdown wrapper):
 
 {{
-  "global_lore": {{
-    "book_metadata": {{
-      "title": "...",
-      "author": "...",
-      "project": "{prefix}",
-      "total_chapters": {len(chapters)},
-      "genre": ["..."],
-      "series_context": "...",
-      "main_theme": "...",
-      "narrative_device": "...",
-      "timespan": "...",
-      "pov_characters": ["..."],
-      "proper_noun_guard": "Active. Preserve exact source spelling."
-    }},
-    "characters": [ {{
-      "name": "...", "role": "...", "core_identity": "...", "character_arc": "...",
-      "visual_profile": "...",
-      "key_relationships": [{{"with": "...", "relation_type": "..."}}],
-      "first_appearance": "EP001",
-      "chapters_present": ["EP001"],
-      "status_at_end": "..."
-    }} ],
-    "mystery_and_clues_tracker": [ {{
-      "mystery": "...", "introduced_in_chapter": "EP001", "resolved_in_chapter": "EP008",
-      "clues": ["..."], "resolution": "...", "significance": "..."
-    }} ],
-    "global_timeline_milestones": [ {{
-      "chapter_range": "EP001", "event_summary": "...", "world_state_change": "..."
-    }} ],
-    "world_building_and_motifs": [ {{
-      "concept": "...", "type": "...", "description": "...", "significance_to_plot": "..."
-    }} ]
-  }},
-
   "name_map": {{
     "project": "{prefix}",
     "generated_phase": "3.1",
     "name_map": {{
       "Canonical Name": {{
-        "aliases": ["..."],
-        "type": "character|location|organization|creature|concept|object|vehicle|technology|culture|motif|ritual_phrase|historical_event|language",
+        "aliases": ["Alias 1", "Alias 2"],
+        "type": "character",
         "lore_type": "normal|fantasy_name|in_world_language",
         "primary_source": "EP001",
-        "episodes": ["EP001"]
+        "episodes": ["EP001", "EP002"]
       }}
     }}
   }},
-
-  "timeline_framework": {{
-    "project": "{prefix}",
-    "timeline_framework": [ {{
-      "chapter_id": "EP001",
-      "title": "CHAPTER I",
-      "day": 1,
-      "relative_time": "...",
-      "primary_location": "...",
-      "summary": "...",
-      "major_milestone_refs": [0],
-      "continuity_notes": "..."
-    }} ]
-  }},
-
   "chapter_appearance": {{
     "project": "{prefix}",
     "chapter_appearance": {{
       "EP001": {{
-        "characters_present": ["..."],
-        "mentioned_only": ["..."],
-        "locations": ["..."],
-        "creatures": ["..."],
-        "concepts": ["..."]
+        "characters_present": ["Canonical Name 1", "Canonical Name 2"]
       }}
     }}
   }}
@@ -157,11 +138,12 @@ def build_global_lore_prompt(project_dir: str, prefix: str) -> str:
     """Build the full global-lore extraction prompt (system rules + chapter texts).
 
     This is what the *connected* AI thinks about — no external API needed.
-    The AI returns a JSON object with the four required keys, which is then
-    persisted via write_global_lore_outputs().
+    The AI returns a JSON object with the name map and chapter appearance keys,
+    and the engine generates the skeletons.
     """
     chapters = _load_clean_chapters(project_dir, prefix)
-    return SYSTEM_PROMPT + "\n\n" + _build_user_prompt(prefix, chapters)
+    candidates = extract_name_candidates(chapters)
+    return SYSTEM_PROMPT + "\n\n" + _build_user_prompt(prefix, chapters, candidates)
 
 
 # ── output writer (deterministic — shared by both paths) ──────────────────────
@@ -205,12 +187,7 @@ def _unwrap_xml_arrays(obj):
 
 
 def write_global_lore_outputs(project_dir: str, prefix: str, result: dict) -> dict:
-    """Validate the four top-level keys and write the verification/ JSON files."""
-    required = {"global_lore", "name_map", "timeline_framework", "chapter_appearance"}
-    missing = required - set(result.keys())
-    if missing:
-        raise ValueError(f"Global-lore JSON missing keys: {missing}")
-
+    """Validate the inputs, automatically generate skeletons for missing lore files, and write the verification/ JSON files."""
     ver_dir = os.path.join(project_dir, "verification")
     os.makedirs(ver_dir, exist_ok=True)
 
@@ -218,6 +195,72 @@ def write_global_lore_outputs(project_dir: str, prefix: str, result: dict) -> di
     # files on disk match the schema the rest of the engine expects (plain
     # lists, not single-key wrapper dicts). See _unwrap_xml_arrays().
     normalised = {k: _unwrap_xml_arrays(v) for k, v in result.items()}
+
+    # ── Phase 3.1c: Engine Auto-generation of skeletons (Change 1) ──
+    if "name_map" in normalised and "chapter_appearance" in normalised:
+        name_map_data = normalised["name_map"]
+        chapter_app_data = normalised["chapter_appearance"]
+        
+        # 1. Create global_lore skeleton
+        if "global_lore" not in normalised:
+            characters_skeleton = []
+            nm_entries = name_map_data.get("name_map", {})
+            for canonical, data in nm_entries.items():
+                if canonical.startswith("_") or not isinstance(data, dict):
+                    continue
+                if data.get("type", "character") == "character":
+                    characters_skeleton.append({
+                        "name": canonical,
+                        "aliases": data.get("aliases", []),
+                        "role": "Character",
+                        "core_identity": "",
+                        "character_arc": "",
+                        "visual_profile": "",
+                        "key_relationships": [],
+                        "first_appearance": data.get("primary_source", "EP001"),
+                        "chapters_present": data.get("episodes", []),
+                        "status_at_end": "Alive"
+                    })
+            
+            normalised["global_lore"] = {
+                "book_metadata": {
+                    "title": prefix.replace("-", " ").title(),
+                    "author": "Unknown",
+                    "project": prefix,
+                    "total_chapters": len(chapter_app_data.get("chapter_appearance", {})),
+                    "genre": [],
+                    "series_context": "",
+                    "main_theme": "",
+                    "narrative_device": "",
+                    "timespan": "",
+                    "pov_characters": [],
+                    "proper_noun_guard": "Active. Preserve exact source spelling."
+                },
+                "characters": characters_skeleton,
+                "mystery_and_clues_tracker": [],
+                "global_timeline_milestones": [],
+                "world_building_and_motifs": []
+            }
+            
+        # 2. Create timeline_framework skeleton
+        if "timeline_framework" not in normalised:
+            timeline_skeleton = []
+            episodes = sorted(chapter_app_data.get("chapter_appearance", {}).keys())
+            for i, ep in enumerate(episodes, 1):
+                timeline_skeleton.append({
+                    "chapter_id": ep,
+                    "title": f"CHAPTER {i}",
+                    "day": i,
+                    "relative_time": "",
+                    "primary_location": "Unknown",
+                    "summary": f"Summary of {ep}",
+                    "major_milestone_refs": [],
+                    "continuity_notes": ""
+                })
+            normalised["timeline_framework"] = {
+                "project": prefix,
+                "timeline_framework": timeline_skeleton
+            }
 
     # ── Bug #17 guard: aliases MUST be flat list[str], never list[list[str]] ──
     # Pydantic v2 silently coerces list-of-list aliases into {"item": [...]}
@@ -307,7 +350,8 @@ def run_phase3_global_lore(project_dir: str, prefix: str, model: str = "gpt-4o")
 
     # 2. call LLM
     print(f"  Calling {model} …")
-    user_prompt = _build_user_prompt(prefix, chapters)
+    candidates = extract_name_candidates(chapters)
+    user_prompt = _build_user_prompt(prefix, chapters, candidates)
     result = call_llm(SYSTEM_PROMPT, user_prompt, model=model)
 
     # 3. validate + write (shared deterministic path)
