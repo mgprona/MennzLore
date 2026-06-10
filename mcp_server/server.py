@@ -648,77 +648,41 @@ def extract_global_lore(project_dir: str, prefix: str = "") -> list[Message]:
     candidates = extract_name_candidates(chapters)
     user_content = _build_user_prompt(prefix, chapters, candidates)
     return [
-        Message(SYSTEM_PROMPT, role="system"),
-        Message(user_content, role="user")
-    ]
-
-@mcp.prompt()
-def analyze_architect(chapter_text: str) -> list[Message]:
-    """Get the prompt for Pass 1.1 (Architect) to extract scene structure."""
-    template = read_repo_file("prompts/pass11_architect_prompt.md")
-    system_content = template.replace("{chapter_text}", "Please analyze the chapter text provided in the user message below.")
-    return [
-        Message(system_content, role="system"),
-        Message(f"CHAPTER TEXT:\n{chapter_text}", role="user")
-    ]
-
-@mcp.prompt()
-def analyze_profiler(chapter_text: str, scene_list: str) -> list[Message]:
-    """Get the prompt for Pass 1.2 (Profiler) to extract characters and behaviors."""
-    template = read_repo_file("prompts/pass12_profiler_prompt.md")
-    system_content = (template
-                      .replace("{scene_list}", scene_list)
-                      .replace("{chapter_text}", "Please analyze the chapter text provided in the user message below."))
-    return [
-        Message(system_content, role="system"),
-        Message(f"CHAPTER TEXT:\n{chapter_text}", role="user")
+        Message(SYSTEM_PROMPT + "\n\n" + user_content, role="user")
     ]
 
 @mcp.prompt()
 def analyze_chronicler(architect_json: str, profiler_json: str, global_lore_excerpt: str, previous_chapters_summary: str = "") -> list[Message]:
     """Get the prompt for Pass 1.3 (Chronicler) to extract cross-chapter connections."""
     template = read_repo_file("prompts/pass13_chronicler_prompt.md")
-    parts = template.split("## INPUT DATA")
-    system_rules = parts[0] + "\n## INPUT DATA\n"
-    user_inputs = (parts[1]
-                   .replace("{architect_json}", architect_json)
-                   .replace("{profiler_json}", profiler_json)
-                   .replace("{global_lore_excerpt}", global_lore_excerpt)
-                   .replace("{previous_chapters_summary}", previous_chapters_summary))
+    combined = (template
+                .replace("{architect_json}", architect_json)
+                .replace("{profiler_json}", profiler_json)
+                .replace("{global_lore_excerpt}", global_lore_excerpt)
+                .replace("{previous_chapters_summary}", previous_chapters_summary))
     return [
-        Message(system_rules, role="system"),
-        Message(user_inputs, role="user")
+        Message(combined, role="user")
     ]
-
-@mcp.prompt()
-def synthesize_window(batch_range: str, episodes_data: str) -> str:
-    """Get the prompt for Phase 4-P2 (Sliding Window Synthesis) to synthesize batches of episodes."""
-    template = read_repo_file("prompts/pass2_sliding_window_prompt.md")
-    return template
 
 @mcp.prompt()
 def sa_combined(chapter_text: str) -> list[Message]:
     """Get the prompt for SA Combined: direct micro-facts extraction from a single chapter."""
     template = read_repo_file("prompts/sa_combined_prompt.md")
-    system_content = template.replace("{chapter_text}", "Please analyze the chapter text provided in the user message below.")
+    combined = template + "\n\n## CHAPTER TEXT\n\n" + chapter_text
     return [
-        Message(system_content, role="system"),
-        Message(f"CHAPTER TEXT:\n{chapter_text}", role="user")
+        Message(combined, role="user")
     ]
 
 @mcp.prompt()
 def sa_lore(part1_output: str, global_lore_excerpt: str, previous_chapters_summary: str = "") -> list[Message]:
     """Get the prompt for SA Lore matching: match combined facts against global lore."""
     template = read_repo_file("prompts/sa_lore_prompt.md")
-    parts = template.split("## Usage")
-    system_rules = parts[0] + "\n## Usage\n"
-    user_inputs = (parts[1]
-                   .replace("{part1_output}", part1_output)
-                   .replace("{global_lore_excerpt}", global_lore_excerpt)
-                   .replace("{previous_chapters_summary}", previous_chapters_summary))
+    combined = (template
+                .replace("{part1_output}", part1_output)
+                .replace("{global_lore_excerpt}", global_lore_excerpt)
+                .replace("{previous_chapters_summary}", previous_chapters_summary))
     return [
-        Message(system_rules, role="system"),
-        Message(user_inputs, role="user")
+        Message(combined, role="user")
     ]
 
 

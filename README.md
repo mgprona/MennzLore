@@ -184,7 +184,7 @@ The AI will:
 
 **5 Resources:** `schema://architect`, `schema://profiler`, `schema://chronicler`, `schema://micro_facts_final`, `example://micro_facts`
 
-**7 Prompts:** `extract_global_lore`, `analyze_architect`, `analyze_profiler`, `analyze_chronicler`, `synthesize_window`, `sa_combined`, `sa_lore`
+**4 Prompts:** `extract_global_lore`, `analyze_chronicler`, `sa_combined`, `sa_lore`
 
 ## Verified Test Novels
 

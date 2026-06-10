@@ -23,11 +23,9 @@ MCP ออกแบบมาเพื่อสิ่งนี้พอดี:
 | 2 Clean | LLM | prompt | `clean_text` |
 | 3.1 Global Lore | LLM | prompt + resource | `extract_global_lore` |
 | 3.2 Auto-Verify | Engine | tool | `verify_names` |
-| 4-P1 Architect | LLM | prompt + resource(schema) | `analyze_architect` |
-| 4-P1 Profiler | LLM | prompt + resource(schema) | `analyze_profiler` |
+| 4-P1 SA Combined | LLM | prompt + resource(schema) | `sa_combined` |
 | 4-P1 Chronicler | LLM | prompt + resource(schema) | `analyze_chronicler` |
 | 4 Merge | Engine | tool | `merge_micro_facts` |
-| 4-P2 Synthesis | LLM | prompt | `synthesize_window` |
 | 7 Assemble | Engine | tool | `assemble_lorebook` |
 | 9 Production | Engine | tool | `render_production` |
 | 10 Spatial | Engine | tool | `render_map` |
@@ -73,9 +71,8 @@ resource: example://micro_facts   → examples/example_micro_facts.json
 Prompts เสิร์ฟจาก `prompts/` พร้อม placeholder fill:
 
 ```
-prompt: analyze_architect(chapter_text)               → prompts/pass11_architect_prompt.md
-prompt: analyze_profiler(chapter_text, scene_list)    → prompts/pass12_profiler_prompt.md
-prompt: analyze_chronicler(architect_json, profiler_json, global_lore_excerpt)
+prompt: sa_combined(chapter_text)                          → prompts/sa_combined_prompt.md
+prompt: analyze_chronicler(architect_json, profiler_json, global_lore_excerpt, previous_chapters_summary)
 ```
 
 ---
