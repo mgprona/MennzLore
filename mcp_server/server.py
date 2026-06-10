@@ -77,11 +77,11 @@ def _check_for_updates():
     # Refresh: git fetch + compare
     try:
         subprocess.run(
-            ["git", "fetch", "origin", "OPTIMIZATION"],
+            ["git", "fetch", "origin", "master"],
             cwd=ROOT_DIR, capture_output=True, text=True, timeout=15,
         )
         result = subprocess.run(
-            ["git", "rev-list", "--count", "HEAD..origin/OPTIMIZATION"],
+            ["git", "rev-list", "--count", "HEAD..origin/master"],
             cwd=ROOT_DIR, capture_output=True, text=True, timeout=10,
         )
         behind = int(result.stdout.strip() or "0")
@@ -716,6 +716,133 @@ def get_micro_facts_schema() -> str:
 def get_micro_facts_example() -> str:
     """Example final micro facts JSON file for reference."""
     return read_repo_file("examples/example_micro_facts.json")
+
+
+# ─── FULL PIPELINE RUNNER ──────────────────────────────────────────────────
+
+PIPELINE_ORDER = [
+    ("1_acquire",       "Acquire raw text (Engine)"),
+    ("2_clean",         "Split & clean chapters (Engine)"),
+    ("3_global_lore",   "Global lore + names + timeline (LLM)"),
+    ("4_micro_facts",   "Micro-facts extraction per chapter (LLM)"),
+    ("5_merge",         "Merge & validate micro_facts (Engine)"),
+    ("6_production",    "Production render: cinematography + image prompts (Engine)"),
+    ("7_map",           "Spatial render: map SVG + routes (Engine)"),
+    ("8_relationships", "Relationship graph: force-directed SVG (Engine)"),
+    ("9_hybrid_notes",  "Per-entity hybrid notes (Engine)"),
+    ("10_entity_registry", "Typed entity registry (Engine)"),
+    ("11_knowledge_graph", "SQLite knowledge graph (Engine)"),
+    ("12_timeline",     "Timeline SVG render (Engine)"),
+    ("13_semantic",     "Semantic search index (Engine)"),
+    ("14_assemble",     "MASTER LOREBOOK — final assembly of all outputs (Engine)"),
+]
+
+ENGINE_ONLY_PHASES = {"5_merge", "6_production", "7_map", "8_relationships",
+                      "9_hybrid_notes", "10_entity_registry", "11_knowledge_graph",
+                      "12_timeline", "13_semantic", "14_assemble"}
+
+
+@mcp.tool()
+def run_full_pipeline(project_dir: str, prefix: str = "",
+                      start_phase: str = "5_merge",
+                      skip_llm: bool = True) -> dict:
+    """Run all engine pipeline phases (5-14) in order for a project.
+
+    Use this AFTER phases 1-4 are complete (acquire, split, global lore, micro_facts).
+    Phases 1-4 require LLM interaction and should be run separately.
+
+    Args:
+        project_dir: Path to the project directory.
+        prefix: Project prefix (auto-detected if empty).
+        start_phase: Phase to start from (default: "5_merge").
+        skip_llm: Always skip LLM phases (default: True).
+    Returns:
+        Dict with per-phase status and overall summary.
+    """
+    if not prefix:
+        prefix = os.path.basename(project_dir.rstrip("/\\"))
+
+    results = {}
+    started = False
+    engine_pass = 0
+    engine_fail = 0
+    skipped = 0
+
+    for phase_id, phase_desc in PIPELINE_ORDER:
+        # Wait until we reach start_phase
+        if not started:
+            if phase_id == start_phase:
+                started = True
+            else:
+                results[phase_id] = {"status": "SKIPPED", "desc": phase_desc}
+                skipped += 1
+                continue
+
+        # Skip LLM phases when skip_llm is set
+        if skip_llm and phase_id not in ENGINE_ONLY_PHASES:
+            results[phase_id] = {"status": "SKIPPED (LLM)", "desc": phase_desc}
+            skipped += 1
+            continue
+
+        try:
+            _run_engine_phase(phase_id, project_dir, prefix)
+            results[phase_id] = {"status": "OK", "desc": phase_desc}
+            engine_pass += 1
+        except Exception as e:
+            results[phase_id] = {"status": f"FAIL: {e}", "desc": phase_desc}
+            engine_fail += 1
+
+    summary = {
+        "project": prefix,
+        "phases": results,
+        "engine_pass": engine_pass,
+        "engine_fail": engine_fail,
+        "skipped": skipped,
+        "total": len(PIPELINE_ORDER),
+    }
+
+    print(f"\n[PIPELINE] {engine_pass}/{engine_pass + engine_fail} engine phases OK ({skipped} skipped)")
+    return summary
+
+
+def _run_engine_phase(phase_id: str, project_dir: str, prefix: str):
+    """Execute one engine phase. Raises on failure."""
+    if phase_id == "5_merge":
+        # Already done via merge_micro_facts — check output exists
+        mf_dir = os.path.join(project_dir, "micro_facts")
+        if not os.path.isdir(mf_dir) or not any(f.endswith(".json") for f in os.listdir(mf_dir)):
+            raise FileNotFoundError("No micro_facts found. Run Phase 4 LLM extraction first.")
+        print(f"[Phase 5] micro_facts: {len([f for f in os.listdir(mf_dir) if f.endswith('.json')])} files — OK")
+
+    elif phase_id == "6_production":
+        build_production(project_dir, prefix)
+
+    elif phase_id == "7_map":
+        build_chart(project_dir, prefix)
+
+    elif phase_id == "8_relationships":
+        render_relationships(project_dir, prefix)
+
+    elif phase_id == "9_hybrid_notes":
+        generate_hybrid_notes(project_dir, prefix)
+
+    elif phase_id == "10_entity_registry":
+        build_entity_registry(project_dir, prefix)
+
+    elif phase_id == "11_knowledge_graph":
+        load_knowledge_graph(project_dir, prefix)
+
+    elif phase_id == "12_timeline":
+        render_timeline(project_dir, prefix)
+
+    elif phase_id == "13_semantic":
+        result = query_lore_semantic(project_dir, prefix=prefix, query="character", limit=1)
+        print(f"[Phase 13] Semantic index: {len(result)} results — OK")
+
+    elif phase_id == "14_assemble":
+        assemble_lorebook(project_dir, prefix)
+    else:
+        raise ValueError(f"Unknown phase: {phase_id}")
 
 
 # ─── PROMPTS ────────────────────────────────────────────────────────────────

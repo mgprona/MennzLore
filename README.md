@@ -154,44 +154,51 @@ The AI will:
 3. Call `extract_global_lore` prompt + reason over chapters + `save_global_lore`
 4. Call `auto_verify_names` → validate character names
 5. Run **Adaptive 2/3-Pass** LLM analysis per chapter
-   - Small chapters (<15KB): SA Combined (2 calls) — direct micro-facts extraction
+   - Small chapters (<15KB): SA Combined (2 calls)
    - Large chapters (>=15KB): Architect → Profiler → Chronicler (3 calls)
 6. Call `merge_micro_facts` per chapter
-7. Call `assemble_lorebook_tool` → `output/master_lorebook_full.md`
-8. Call `render_production_tool` → cinematography shot list + visual style bible
-9. Call `render_map_tool` → SVG map with locations and routes
-10. (Optional) Phases 11-16: relationship graph, hybrid notes, entity registry, knowledge graph, timeline, semantic search
+7. Call `run_full_pipeline` → runs all engine phases (5-14):
+   - Production render (cinematography + image prompts)
+   - Map render (SVG locations + routes)
+   - Relationship graph
+   - Hybrid notes
+   - Entity registry
+   - Knowledge graph
+   - Timeline
+   - Semantic index
+   - **ASSEMBLE master lorebook** (final step)
 
 ## The 24 MCP Tools
 
-### Core Pipeline (Phases 1-10)
+### Core Pipeline (Phases 1-14)
 
 | Tool | Phase | |
 |---|---|---|
 | `acquire_by_id` | 1 | Download a PG book by Gutenberg ID |
 | `acquire_by_title` | 1 | Download by title + author (via gutendex) |
 | `split_into_chapters` | 2 | Strip boilerplate + split per chapter |
-| `save_global_lore` | 3.1 | Persist 4 JSONs (connected AI path, no API key) |
-| `run_global_lore` | 3.1 | API fallback — uses OPENAI_API_KEY |
-| `auto_verify_names` | 3.2 | Validate name_map vs clean texts (no LLM) |
-| `verify_character_names` | 3.2 | Cross-reference names against raw/clean files |
-| `merge_micro_facts` | 4 | Adaptive merge (2-Pass or 3-Pass) + normalize_sa_json |
-| `assemble_lorebook_tool` | 7 | Master lorebook Markdown |
-| `render_production_tool` | 9 | Cinematography + visual style bible |
-| `render_map_tool` | 10 | SVG map with location geography |
+| `save_global_lore` | 3 | Persist 4 JSONs (connected AI path, no API key) |
+| `run_global_lore` | 3 | API fallback — uses OPENAI_API_KEY |
+| `auto_verify_names` | 3 | Validate name_map vs clean texts (no LLM) |
+| `verify_character_names` | 3 | Cross-reference names against raw/clean files |
+| `merge_micro_facts` | 5 | Adaptive merge (2-Pass or 3-Pass) + normalize_sa_json |
+| `run_full_pipeline` | 5-14 | **Run all engine phases in one go** |
+| `assemble_lorebook_tool` | 14 | Master lorebook Markdown (final assembly) |
+| `render_production_tool` | 6 | Cinematography + visual style bible |
+| `render_map_tool` | 7 | SVG map with location geography |
 | `open_dashboard_tool` | — | Launch world explorer at localhost:8000 |
 | `query_past_lore_tool` | — | Local RAG: search past episodes' micro_facts |
 
-### Extended Pipeline (Phases 11-16)
+### Extended Pipeline (Phases 8-13)
 
 | Tool | Phase | |
 |---|---|---|
-| `render_relationships_tool` | 11 | Force-directed entity relationship graph (SVG, GEXF, JSON) |
-| `generate_hybrid_notes_tool` | 12 | Per-entity hybrid notes [CONTEXT][FACTS][BEHAVIOR][GAPS][EVIDENCE] |
-| `build_entity_registry_tool` | 13 | Typed entity registry (6 types, 9 relation types) |
-| `query_knowledge_graph` | 14 | FTS5 + graph query: stats, search, entity, path, neighbors |
-| `render_timeline_tool` | 15 | SVG timeline with character heatmap + location tracking |
-| `query_lore_semantic_tool` | 16 | Semantic search (ChromaDB / TF-IDF fallback) |
+| `render_relationships_tool` | 8 | Force-directed entity relationship graph (SVG, GEXF, JSON) |
+| `generate_hybrid_notes_tool` | 9 | Per-entity hybrid notes [CONTEXT][FACTS][BEHAVIOR][GAPS][EVIDENCE] |
+| `build_entity_registry_tool` | 10 | Typed entity registry (6 types, 9 relation types) |
+| `query_knowledge_graph` | 11 | FTS5 + graph query: stats, search, entity, path, neighbors |
+| `render_timeline_tool` | 12 | SVG timeline with character heatmap + location tracking |
+| `query_lore_semantic_tool` | 13 | Semantic search (ChromaDB / TF-IDF fallback) |
 
 ### Storyboard & Media
 
