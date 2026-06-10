@@ -93,6 +93,18 @@ class KnowledgeGraph:
     def close(self):
         self.conn.close()
     
+    def clear(self):
+        """Clear all data from the database tables and in-memory caches."""
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM entities")
+        cursor.execute("DELETE FROM relations")
+        cursor.execute("DELETE FROM evidence_fts")
+        self.conn.commit()
+        
+        self._adj.clear()
+        self._name_to_id.clear()
+        self._id_to_name.clear()
+    
     # ── Loading ──────────────────────────────────────────────────────────
     
     def load_project(self, project_dir: str, prefix: str) -> dict:
@@ -491,7 +503,8 @@ def _rebuild_adjacency(kg: KnowledgeGraph) -> None:
         kg._adj[row["target_id"]].add(row["source_id"])
 
 def load_knowledge_graph(project_dir: str, prefix: str = "",
-                         db_path: str | None = None) -> KnowledgeGraph:
+                         db_path: str | None = None,
+                         force_reload: bool = False) -> KnowledgeGraph:
     """Load a project into a queryable KnowledgeGraph.
     
     Args:
@@ -500,6 +513,7 @@ def load_knowledge_graph(project_dir: str, prefix: str = "",
         db_path: SQLite database path (default: in-memory)
             When a file path is given, the DB is persisted and reused across
             calls.  It is automatically created/refreshed the first time.
+        force_reload: Bypass cache and force reload project data.
     
     Returns:
         KnowledgeGraph instance ready for queries
@@ -512,10 +526,30 @@ def load_knowledge_graph(project_dir: str, prefix: str = "",
     else:
         os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
     
+    stale_cache = False
+    if db_path != ":memory:" and os.path.exists(db_path):
+        # Check if any micro_facts file is newer than the DB file
+        mf_dir = os.path.join(project_dir, "micro_facts")
+        if not os.path.isdir(mf_dir):
+            mf_dir = os.path.join(project_dir, "analysis", "micro_facts")
+        
+        if os.path.isdir(mf_dir):
+            try:
+                db_mtime = os.path.getmtime(db_path)
+                latest_mf_time = os.path.getmtime(mf_dir)
+                for f in os.listdir(mf_dir):
+                    if f.endswith(".json"):
+                        latest_mf_time = max(latest_mf_time, os.path.getmtime(os.path.join(mf_dir, f)))
+                if db_mtime < latest_mf_time:
+                    stale_cache = True
+                    print(f"[INFO] Knowledge graph cache is stale. Reloading data...")
+            except OSError:
+                pass
+    
     kg = KnowledgeGraph(db_path)
     
-    # If the file-based DB already has data, skip reloading
-    if db_path != ":memory:" and os.path.exists(db_path):
+    # If the file-based DB already has data, skip reloading (unless force_reload or stale)
+    if db_path != ":memory:" and not force_reload and not stale_cache:
         cursor = kg.conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM entities")
         count = cursor.fetchone()[0]
@@ -524,6 +558,10 @@ def load_knowledge_graph(project_dir: str, prefix: str = "",
             _rebuild_adjacency(kg)
             print(f"[OK] Knowledge graph loaded from cache: {count} entities")
             return kg
+            
+    # Clear any existing tables if reloading
+    if db_path != ":memory:":
+        kg.clear()
     
     stats = kg.load_project(project_dir, prefix)
     # Rebuild adjacency after load (needed for in-memory case too)

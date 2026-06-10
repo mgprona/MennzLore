@@ -634,10 +634,10 @@ def upgrade_repo(repo_dir: str, python_exe: str, server_script: str) -> list[str
         print(f"         {result.stdout.strip().split(chr(10))[-1]}")
 
     # 2. Pip upgrade deps
-    print("[UPGRADE] pip install --upgrade fastmcp pydantic requests…")
+    print("[UPGRADE] pip install --upgrade fastmcp pydantic requests pyyaml…")
     result = subprocess.run(
         [python_exe, "-m", "pip", "install", "--quiet", "--upgrade",
-         "fastmcp", "pydantic", "requests"],
+         "fastmcp", "pydantic", "requests", "pyyaml"],
         cwd=repo_dir, capture_output=True, text=True, timeout=60,
     )
     if result.returncode != 0:
@@ -723,9 +723,9 @@ def _run_git(args: list, capture: bool = True, timeout: int = 30) -> int:
 # ─── Install dependencies (idempotent) ────────────────────────────────────
 
 def install_deps() -> None:
-    print("[INFO] Installing Python dependencies (fastmcp, pydantic, requests)…")
+    print("[INFO] Installing Python dependencies (fastmcp, pydantic, requests, pyyaml)…")
     rc = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--quiet", "fastmcp", "pydantic", "requests"],
+        [sys.executable, "-m", "pip", "install", "--quiet", "fastmcp", "pydantic", "requests", "pyyaml"],
         check=False,
     ).returncode
     if rc != 0:

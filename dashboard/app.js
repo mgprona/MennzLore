@@ -1,5 +1,5 @@
 // State Variables
-let currentProject = 'chula-project';
+let currentProject = '';
 let episodes = [];
 let currentEpisodeIndex = 0;
 let isPlaying = false;
@@ -20,11 +20,38 @@ const tooltip = document.getElementById('tooltip');
 
 // Initialize Dashboard
 document.addEventListener('DOMContentLoaded', () => {
-    loadProject(currentProject);
+    // Fetch all available projects dynamically
+    fetch('/api/projects')
+        .then(res => res.json())
+        .then(projects => {
+            projectSelect.innerHTML = '';
+            if (projects && projects.length > 0) {
+                projects.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.name;
+                    opt.textContent = p.title;
+                    projectSelect.appendChild(opt);
+                });
+                currentProject = projects[0].name;
+                loadProject(currentProject);
+            } else {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'No projects found';
+                projectSelect.appendChild(opt);
+                mockProjectData();
+            }
+        })
+        .catch(err => {
+            console.error('Failed to load project list:', err);
+            mockProjectData();
+        });
     
     projectSelect.addEventListener('change', (e) => {
         currentProject = e.target.value;
-        loadProject(currentProject);
+        if (currentProject) {
+            loadProject(currentProject);
+        }
     });
 
     btnPlay.addEventListener('click', togglePlay);

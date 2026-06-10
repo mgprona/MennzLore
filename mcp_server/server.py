@@ -876,7 +876,8 @@ def _run_engine_phase(phase_id: str, project_dir: str, prefix: str):
 
     elif phase_id == "11_knowledge_graph":
         load_knowledge_graph(project_dir, prefix,
-                             db_path=os.path.join(project_dir, "output", "knowledge_graph.db"))
+                             db_path=os.path.join(project_dir, "output", "knowledge_graph.db"),
+                             force_reload=True)
 
     elif phase_id == "12_timeline":
         render_timeline(project_dir, prefix)
