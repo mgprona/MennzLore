@@ -24,41 +24,11 @@ from fastmcp import FastMCP
 from fastmcp.prompts import Message
 import fastmcp.prompts.base as _fb
 
-# ── Prompt Caching Patch ────────────────────────────────────────────────────
-# fastmcp 3.4.2 + mcp.types only accept Literal["user","assistant"] for
-# role.  We monkey-patch Message so it accepts "system" too, which enables
-# LLM prompt-caching (Anthropic ephemeral / OpenAI cached system messages)
-# when the client splits the prompt into a static system part and a dynamic
-# user part.
-
-_orig_message_init = _fb.Message.__init__
-_patch_needed = True
-try:
-    _fver = tuple(int(x) for x in fastmcp.__version__.split(".")[:2]) if hasattr(fastmcp, "__version__") else (0, 0)
-    if _fver >= (3, 5):
-        _patch_needed = False
-except Exception:
-    pass
-
-if _patch_needed:
-    def _patched_message_init(self, content, role="user"):
-        role_actual = role
-        if role not in ("user", "assistant"):
-            role = "user"
-        _orig_message_init(self, content, role=role)
-        object.__setattr__(self, "_role_actual", role_actual)
-
-    _orig_to_mcp = _fb.Message.to_mcp_prompt_message
-
-    def _patched_to_mcp(self):
-        result = _orig_to_mcp(self)
-        actual_role = getattr(self, "_role_actual", None)
-        if actual_role and actual_role not in ("user", "assistant"):
-            object.__setattr__(result, "role", actual_role)
-        return result
-
-    _fb.Message.__init__ = _patched_message_init
-    _fb.Message.to_mcp_prompt_message = _patched_to_mcp
+# ── Prompt role fix ────────────────────────────────────────────────────
+# MCP protocol v2025-03-26 (FastMCP 3.4.x) only accepts role="user" or
+# role="assistant" in prompt messages.  System-instruction content is
+# embedded directly into a user message instead.
+# See: https://github.com/modelcontextprotocol/specification
 
 
 # ── Auto-update check (non-blocking, cached 24h) ──────────────────────────
@@ -920,9 +890,8 @@ def extract_global_lore(project_dir: str, prefix: str = "") -> list[Message]:
     candidates = extract_name_candidates(chapters)
     user_content = _build_user_prompt(prefix, chapters, candidates)
     return [
-        Message(SYSTEM_PROMPT, role="system"),
-        Message(user_content, role="user"),
-    ]
+            Message(SYSTEM_PROMPT + "\n\n" + user_content, role="user"),
+        ]
 
 
 def _split_chronicler_template() -> tuple[str, str]:
@@ -951,8 +920,8 @@ def analyze_architect(chapter_text: str) -> list[Message]:
     )
     filled = template.replace("{chapter_text}", chapter_text)
     return [
-        Message(filled + hash_note, role="system"),
-    ]
+            Message(filled + hash_note, role="user"),
+        ]
 
 
 @mcp.prompt()
@@ -972,7 +941,7 @@ def analyze_profiler(chapter_text: str, architect_json: str) -> list[Message]:
         scene_list = architect_json[:500]
     filled = template.replace("{scene_list}", scene_list).replace("{chapter_text}", chapter_text)
     return [
-        Message(filled, role="system"),
+        Message(filled, role="user"),
     ]
 
 
@@ -994,8 +963,7 @@ def analyze_chronicler(architect_json: str, profiler_json: str, global_lore_exce
 ### Previous Chapters Summary (Context)
 {previous_chapters_summary}"""
     return [
-        Message(system_part, role="system"),
-        Message(user_part, role="user"),
+        Message(system_part + "\n\n" + user_part, role="user"),
     ]
 
 
@@ -1012,8 +980,7 @@ def sa_combined(chapter_text: str) -> list[Message]:
         f"(This proves you read the actual chapter text — computed from its content)\n"
     )
     return [
-        Message(template + hash_note, role="system"),
-        Message("## Chapter Text\n\n" + chapter_text, role="user"),
+        Message(template + hash_note + "\n\n## Chapter Text\n\n" + chapter_text, role="user"),
     ]
 
 
@@ -1034,8 +1001,7 @@ def sa_lore(part1_output: str, global_lore_excerpt: str, previous_chapters_summa
 ### Previous Chapters Summary
 {previous_chapters_summary}"""
     return [
-        Message(template, role="system"),
-        Message(user_part, role="user"),
+        Message(template + "\n\n" + user_part, role="user"),
     ]
 
 
