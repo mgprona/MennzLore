@@ -10,6 +10,21 @@ AI ที่เชื่อมต่ออยู่ (Claude, Hermes, Gemini, Cod
 
 ---
 
+## สารบัญ
+
+- [ติดตั้ง](#ติดตั้ง-ครั้งเดียว)
+- [เริ่มใช้งาน](#เริ่มใช้งาน)
+- [Pipeline 14 Phase](#pipeline-ครบ-14-phase)
+- [MCP Tools (26 รายการ)](#mcp-tools-26-รายการ)
+- [Adaptive 2/3-Pass](#adaptive-23-pass-v52)
+- [Troubleshooting](#troubleshooting)
+- [โครงสร้าง repo](#โครงสร้าง-repo)
+- [ทดสอบ](#ทดสอบ)
+- [นิยายที่ผ่านการทดสอบแล้ว](#นิยายที่ผ่านการทดสอบแล้ว)
+- [License](#license)
+
+---
+
 ## ติดตั้ง (ครั้งเดียว)
 
 ```bash
@@ -58,7 +73,8 @@ AI จะทำงานตามลำดับ:
 |:------|:-----|:-------|:-------|
 | 1 | Acquire | Engine | `raw/<prefix>_full.txt` |
 | 2 | Split & Clean | Engine | `clean/<prefix>_EP###.txt` |
-| 3 | Global Lore + Names | **LLM** | `verification/*.json` |
+| 3 | Global Lore + Names | **LLM** | `verification/<prefix>_global_lore.json`, `name_map.json` |
+| 3.2 | Auto-Verify Names | Engine | `verification/<prefix>_name_verification.json` |
 | 4 | Micro-Facts (2/3-Pass) | **LLM** | `micro_facts/<prefix>_EP###_micro_facts.json` |
 | 5 | Merge & Validate | Engine | Pydantic validation + normalize_sa_json |
 | 6 | Production Render | Engine | `output/production/` — shot list, image prompts, style bible |
@@ -131,9 +147,9 @@ AI จะทำงานตามลำดับ:
 
 ---
 
-## Adaptive 2/3-Pass (v5.1)
+## Adaptive 2/3-Pass (v5.2)
 
-ประหยัด token 60–70% เมื่อเทียบกับ v5.0:
+ประหยัด token 60–70% เมื่อเทียบกับ v5.0 (single-pass เต็มบท):
 
 | บทขนาด | Mode | LLM Calls | Prompts |
 |:-------:|:----:|:---------:|---------|
@@ -145,6 +161,49 @@ Engine รันหลัง LLM ทุกครั้ง:
 - `self_correct_micro_facts()` — heal scene ID references
 - `MicroFactsFinal @model_validator` — ตรวจ hallucinated scene refs ทุกตัว
 - Source verification — ตรวจ `_source_hash` ว่า AI อ่านบทจริง ไม่ได้สร้างข้อมูลปลอม
+
+---
+
+## Troubleshooting
+
+### MCP tools ไม่ขึ้นในรายการ
+
+```bash
+hermes mcp test mennzlore   # ทดสอบว่า server ตอบสนองหรือไม่
+```
+- `Connected` แต่ tools ยังไม่เห็น → ต้อง `/restart` session (discovery เกิดขึ้นตอน startup เท่านั้น)
+- `Connection failed: Input should be a valid list` → config.yaml ของ Hermes ใช้ YAML string แทน list (`'[C:/...]'` → `[C:/...]`)
+
+### run_full_pipeline timeout
+
+ถ้า project มี 12+ บท, 60+ scenes → MCP timeout 600s ได้ ให้รันแยก phase แทน:
+```python
+# รันทีละ phase ผ่าน Python โดยตรง
+from engine.assemble_generic import assemble_lorebook
+assemble_lorebook("/path/to/project", "prefix")
+```
+
+### ตรวจสอบ output quality หลัง pipeline
+
+| Phase | เช็คไฟล์ | ผ่าน |
+|-------|---------|------|
+| 6 | `scene_image_prompts.json` | > 0 items |
+| 6 | `visual_style_bible.json` | > 0 keys |
+| 7 | `location_geography.json` | มี entries |
+| 8 | `relationship_data.json` | nodes > 10, edges > 0 |
+| 11 | `knowledge_graph.db` | ไฟล์ > 10KB |
+| 14 | `master_lorebook_full.md` | ไฟล์ > 10KB |
+
+### MCP server restart (เฉพาะ code change เท่านั้น)
+
+ถ้าแก้ engine/*.py แล้วไม่อยาก `/restart` ทั้ง session:
+```bash
+# หา process ID ของ MCP server
+wmic process where "name='python.exe' and commandline like '%server%'" get processid
+# kill + start ใหม่ แล้ว MCP จะ reconnect อัตโนมัติ
+```
+
+> **หมายเหตุ:** กรณี config change ยังต้อง `/restart` อยู่
 
 ---
 
@@ -171,7 +230,7 @@ MennzLore/
 ## ทดสอบ
 
 ```bash
-python tests/run_all_tests.py   # คาดว่า 85 passed
+python tests/run_all_tests.py   # 85 tests, คาดว่าผ่านทั้งหมด
 ```
 
 ครอบคลุม: chapter splitting, XML array unwrapping, normalize_sa_json, evidence tracing, fail-fast, phase 1–3 regression guards
@@ -184,12 +243,14 @@ python tests/run_all_tests.py   # คาดว่า 85 passed
 |-------|---------|:------------:|:--:|:--:|
 | Alice's Adventures in Wonderland | Lewis Carroll | #11 | 12 | ✅ |
 | Through the Looking-Glass | Lewis Carroll | #12 | 12 | ✅ |
-| The Call of the Wild | Jack London | #215 | 7 | ✅ |
+| The Time Machine | H.G. Wells | #35 | 12 | ✅ |
+| Strange Case of Dr Jekyll & Mr Hyde | R.L. Stevenson | #42 | 6 | ✅ |
 | A Princess of Mars | E.R. Burroughs | #62 | 28 | ✅ |
 | A Study in Scarlet | A.C. Doyle | #244 | 16 | ✅ |
+| The Call of the Wild | Jack London | #215 | 7 | ✅ |
 | The Mind Master | A.J. Burks | #29416 | 14 | ✅ |
 
-**v5.1 stress test:** 31/31 บท merge สำเร็จ — 0 validation error, 0 hallucination
+**v5.2 stress test:** 8 นิยาย, 107 บท — 0 validation error, 0 hallucination, 100% engine phase pass
 
 ---
 
