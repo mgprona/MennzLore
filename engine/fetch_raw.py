@@ -20,7 +20,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 
 # optional state integration — silently skipped if pipeline_state not on path
 try:
@@ -187,7 +187,7 @@ def _finalize(book_id, book_title, authors, raw_bytes, source, source_url, base_
         "authors":         authors,
         "source":          source,
         "source_url":      source_url,
-        "fetched_at":      datetime.utcnow().isoformat() + "Z",
+        "fetched_at":      datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "raw_file":        f"raw/{prefix}_full.txt",
         "raw_bytes":       len(raw_bytes),
     }

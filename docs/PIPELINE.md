@@ -80,7 +80,9 @@ python engine/split_chapters.py <project_dir> [prefix]
 ใช้ **AI ที่เชื่อมต่ออยู่** (MCP client) เป็นคนสกัด ไม่ต้องตั้ง API key แยก:
 
 1. ขอ prompt ผ่าน MCP prompt `extract_global_lore(project_dir, prefix)` — server อ่าน `clean/<prefix>_EP*.txt` ทั้งหมดแล้วฝังลงใน prompt
-2. AI อ่าน + คิด → คืน JSON object ที่มี 4 key: `global_lore`, `name_map`, `timeline_framework`, `chapter_appearance`
+2. AI อ่าน + คิด → คืน JSON object ที่มี **2 key หลัก**: `name_map`, `chapter_appearance`
+   - Engine auto-generates `global_lore` skeleton และ `timeline_framework` skeleton จาก 2 key นี้ (v5.1 names-only path — ประหยัด token ~50%)
+   - ถ้าต้องการ global_lore แบบละเอียด ส่ง 4 key ทั้งหมด (`global_lore`, `name_map`, `timeline_framework`, `chapter_appearance`) — engine รับได้
 3. ส่ง JSON เข้า MCP tool `save_global_lore(...)` → validate + เขียน `verification/<prefix>_*.json`
 
 > **ทางสำรอง (headless/CLI):** `run_global_lore` หรือ `python engine/phase3_global_lore.py <project_dir> [prefix]`

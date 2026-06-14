@@ -29,7 +29,7 @@ from pathlib import Path
 REPO = Path(__file__).parent.parent
 ENGINE_DIR = REPO / "engine"
 TESTS_DIR = REPO / "tests"
-PROJECTS_ROOT = Path(r"C:\Users\mennz\lore-projects")
+PROJECTS_ROOT = Path(os.getenv("MENNZLORE_PROJECTS_ROOT", str(Path.home() / "lore-projects")))
 
 VERBOSE = "--verbose" in sys.argv
 

@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import hashlib
 from typing import Dict, Any, List
 
 def load_json(file_path: str) -> Dict[str, Any]:
@@ -93,13 +94,11 @@ def normalize_location(raw_loc: str) -> str:
     loc = loc.split(" — ")[0] if " — " in loc else loc
     return loc.strip()
 
-import hashlib
-
 def calculate_file_hash(file_path: str) -> str:
-    """Calculate MD5 hash of a file's content to detect changes."""
+    """Calculate SHA256 hash of a file's content to detect changes."""
     if not os.path.exists(file_path):
         return ""
-    hasher = hashlib.md5()
+    hasher = hashlib.sha256()
     try:
         with open(file_path, "rb") as f:
             buf = f.read()

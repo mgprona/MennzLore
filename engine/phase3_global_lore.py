@@ -293,7 +293,42 @@ def write_global_lore_outputs(project_dir: str, prefix: str, result: dict) -> di
             json.dump(normalised[key], f, ensure_ascii=False, indent=2)
         print(f"  Wrote: {out_path}")
 
-    nm = normalised["name_map"].get("name_map", {})
+    # ── Auto-generate visual_style.md from global_lore characters ──
+    entities_dir = os.path.join(project_dir, "entities")
+    os.makedirs(entities_dir, exist_ok=True)
+    vs_path = os.path.join(entities_dir, f"{prefix}_visual_style.md")
+    gl = normalised.get("global_lore", {})
+    chars = gl.get("characters", [])
+    setting = gl.get("setting", {})
+    era = setting.get("era", "Unknown")
+    world = setting.get("world", "")
+    genre = gl.get("book_metadata", {}).get("genre", [])
+    genre_str = ", ".join(genre) if isinstance(genre, list) else str(genre)
+    vs_lines = [f"# Visual Style Guide - {prefix}\n"]
+    vs_lines.append(f"\n**Genre:** {genre_str}")
+    vs_lines.append(f"\n**Setting:** {era}")
+    vs_lines.append(f"\n**World:** {world}\n")
+    vs_lines.append("\n---\n")
+    vs_lines.append("\n## Characters\n")
+    for char in chars:
+        if isinstance(char, dict):
+            name = char.get("name", "Unknown")
+            desc = char.get("description", "")
+            role = char.get("role", "Character")
+            vs_lines.append(f"\n### {name}")
+            vs_lines.append(f"**Role:** {role}")
+            if desc:
+                vs_lines.append(f"**Description:** {desc}")
+            vs_lines.append(f"**Visual Reference Prompt:** {name} from '{prefix}'. "
+                          f"{era} setting. {desc[:150] if desc else ''}")
+            vs_lines.append("")
+    with open(vs_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(vs_lines))
+    print(f"  Wrote: {vs_path} ({len(chars)} characters)")
+
+    nm = normalised.get("name_map", {})
+    if isinstance(nm, dict) and "name_map" in nm:
+        nm = nm["name_map"]
     if _HAS_STATE:
         ps = PipelineState(project_dir, prefix)
         ps.set_phase("3_global_lore", "COMPLETE",
@@ -303,12 +338,17 @@ def write_global_lore_outputs(project_dir: str, prefix: str, result: dict) -> di
                      entries=len(nm))
 
     return {
-        "characters":       len(normalised["global_lore"].get("characters", [])),
-        "name_map_entries": len(nm),
-        "timeline_entries": len(normalised["timeline_framework"].get("timeline_framework", [])),
-        "chapter_appearance_entries": len(normalised["chapter_appearance"].get("chapter_appearance", {})),
-        "outputs":          [f"verification/{v}" for v in outputs.values()],
-    }
+            "characters":       len(normalised.get("global_lore", {}).get("characters", [])),
+            "name_map_entries": len(nm),
+            "timeline_entries": (len(normalised.get("timeline_framework", {})) 
+                                 if not isinstance(normalised.get("timeline_framework"), list) 
+                                 else len(normalised["timeline_framework"])),
+            "chapter_appearance_entries": (len(normalised.get("chapter_appearance", {}))
+                                           if not isinstance(normalised.get("chapter_appearance"), dict)
+                                           or not any(k.startswith("EP") for k in normalised.get("chapter_appearance", {}))
+                                           else len(normalised["chapter_appearance"])),
+            "outputs":          [f"verification/{v}" for v in outputs.values()],
+        }
 
 
 # ── LLM call ─────────────────────────────────────────────────────────────────

@@ -133,7 +133,9 @@ def smoke_test_server(python_exe: str, server_script: str, repo_dir: str, timeou
         line = proc.stdout.readline() if proc.stdout else ""
         if line:
             output_lines.append(line.strip())
-        # fastmcp servers print tool count on startup
+        # Collect stderr and check for telltale signs of startup success
+        # FastMCP communicates via JSON-RPC over stdio; a clean startup means
+        # the process doesn't crash immediately (no errors in output).
         if proc.poll() is not None:
             # Process exited
             break
@@ -218,6 +220,11 @@ def _yaml_minimal_load(text: str) -> dict:
         pass
     except Exception as e:
         raise SystemExit(f"[ERROR] Failed to parse YAML: {e}")
+
+    # Warn if the config file is non-trivial and PyYAML is absent
+    if text and len(text) > 200:
+        print("[WARN] PyYAML not installed. Complex config sections may be lost. "
+              "Fix: pip install pyyaml")
 
     # Minimal parser: maps every "key: value" pair at any indent level into a
     # nested dict. Good enough to *read* the existing block, even if we won't
@@ -627,10 +634,10 @@ def upgrade_repo(repo_dir: str, python_exe: str, server_script: str) -> list[str
         print(f"         {result.stdout.strip().split(chr(10))[-1]}")
 
     # 2. Pip upgrade deps
-    print("[UPGRADE] pip install --upgrade fastmcp pydantic requests…")
+    print("[UPGRADE] pip install --upgrade fastmcp pydantic requests pyyaml…")
     result = subprocess.run(
         [python_exe, "-m", "pip", "install", "--quiet", "--upgrade",
-         "fastmcp", "pydantic", "requests"],
+         "fastmcp", "pydantic", "requests", "pyyaml"],
         cwd=repo_dir, capture_output=True, text=True, timeout=60,
     )
     if result.returncode != 0:
@@ -696,12 +703,10 @@ def resolve_repo() -> tuple[str, str]:
     print(f"[INFO] install.py is not inside the MennzLore repo. Cloning to: {target_dir}")
     if os.path.exists(target_dir):
         print("[INFO] Target exists, running git pull…")
-        if subprocess_returncode(f'git -C "{target_dir}" pull') != 0:
+        if _run_git(["-C", target_dir, "pull"]) != 0:
             sys.exit("[ERROR] git pull failed")
     else:
-        if subprocess_returncode(
-            f'git clone https://github.com/mgprona/MennzLore.git "{target_dir}"'
-        ) != 0:
+        if _run_git(["clone", "https://github.com/mgprona/MennzLore.git", target_dir]) != 0:
             sys.exit("[ERROR] git clone failed — install git or run from the cloned folder")
     server_script = os.path.join(target_dir, "mcp_server", "server.py")
     if not os.path.exists(server_script):
@@ -709,18 +714,20 @@ def resolve_repo() -> tuple[str, str]:
     return target_dir, server_script
 
 
-def subprocess_returncode(cmd: str) -> int:
-    """Run a shell command, return exit code (don't raise)."""
-    import subprocess
-    return subprocess.run(cmd, shell=True, check=False).returncode
+def _run_git(args: list, capture: bool = True, timeout: int = 30) -> int:
+    """Run a git command in a subprocess, return exit code."""
+    import subprocess as _sp
+    return _sp.run(["git"] + args, capture_output=capture, text=True, timeout=timeout).returncode
 
 
 # ─── Install dependencies (idempotent) ────────────────────────────────────
 
 def install_deps() -> None:
-    print("[INFO] Installing Python dependencies (fastmcp, pydantic, requests)…")
-    cmd = f'"{sys.executable}" -m pip install --quiet fastmcp pydantic requests'
-    rc = subprocess_returncode(cmd)
+    print("[INFO] Installing Python dependencies (fastmcp, pydantic, requests, pyyaml)…")
+    rc = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--quiet", "fastmcp", "pydantic", "requests", "pyyaml"],
+        check=False,
+    ).returncode
     if rc != 0:
         print(f"[WARN] pip install exited with code {rc} — continuing (deps may already be present)")
 

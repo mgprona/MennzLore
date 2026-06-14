@@ -198,6 +198,14 @@ def extract_evidence(merged: dict, clean_chapter_path: str | None = None) -> dic
         lines = f.readlines()
     full_text = "".join(lines)
     
+    # Build keyword → line index for O(1) candidate lookup
+    from collections import defaultdict
+    kw_index = defaultdict(set)
+    for i, line in enumerate(lines):
+        for w in re.findall(r'\w+', line.lower()):
+            if len(w) > 3:
+                kw_index[w].add(i)
+    
     def find_best_match(description: str, text: str, context_window: int = 30) -> dict | None:
         """Find the best literal match for a description in text using sliding window."""
         if not description or len(description) < 10:
@@ -213,27 +221,32 @@ def extract_evidence(merged: dict, clean_chapter_path: str | None = None) -> dic
         for kw in keywords:
             stems.add(kw[:4])
         
+        # Use keyword index for fast candidate lookup
+        candidate_indices = set()
+        for kw in keywords:
+            if kw in kw_index:
+                candidate_indices.update(kw_index[kw])
+        for stem in stems:
+            for k in list(kw_index.keys()):
+                if k.startswith(stem):
+                    candidate_indices.update(kw_index[k])
+        
         best_score = 0.0
         best_start = None
         best_quote = None
         
-        # Search each line for keyword or stem matches
-        for i, line in enumerate(lines):
-            line_lower = line.lower()
-            # Match if any keyword is a substring of the line, or any stem matches
-            if any(kw in line_lower for kw in keywords) or \
-               any(stem in line_lower for stem in stems):
-                # Found a candidate — extract a window and compute similarity
-                window_start = max(0, i - context_window // 2)
-                window_end = min(len(lines), i + context_window // 2 + 1)
-                window_text = "".join(lines[window_start:window_end])
-                
-                # Use SequenceMatcher for fuzzy match
-                score = SequenceMatcher(None, description.lower(), window_text.lower()).ratio()
-                if score > best_score:
-                    best_score = score
-                    best_start = window_start + 1  # 1-based
-                    best_quote = window_text.strip()
+        for i in sorted(candidate_indices):
+            # Found a candidate — extract a window and compute similarity
+            window_start = max(0, i - context_window // 2)
+            window_end = min(len(lines), i + context_window // 2 + 1)
+            window_text = "".join(lines[window_start:window_end])
+            
+            # Use SequenceMatcher for fuzzy match
+            score = SequenceMatcher(None, description.lower(), window_text.lower()).ratio()
+            if score > best_score:
+                best_score = score
+                best_start = window_start + 1  # 1-based
+                best_quote = window_text.strip()
         
         if best_score >= 0.10 and best_quote:
             return {
@@ -498,6 +511,8 @@ def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None,
     # without ever reading the chapter content through LLM extraction.
     if resolved_clean:
         _verify_analysis_source(loaded, resolved_clean, ep_num)
+    else:
+        print(f"  [WARN] {ep_num}: Clean chapter not found — source hash verification skipped.")
 
     merged = _build_merged_dict(loaded, ep_num, mode)
 
@@ -506,9 +521,6 @@ def merge_to_micro_facts(prefix: str, ep_num: str, base_dir: str | None = None,
 
     # Run Self-Correction & Healing Agent
     merged = self_correct_micro_facts(merged)
-
-    # Resolve clean chapter path for evidence extraction
-    resolved_clean = _resolve_clean_path(base_dir, prefix, ep_num, clean_chapter_path)
 
     # Phase 1.1: Extract evidence quotes from clean chapter text
     if resolved_clean:

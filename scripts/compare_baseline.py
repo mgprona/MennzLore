@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Compare current project state against baseline_before.json"""
 import sys, os, json
+from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from engine.utils import load_json
 
-baseline = json.loads(open(r'C:\Users\mennz\Desktop\projects\baseline_before.json', encoding='utf-8').read())
+PROJECTS_ROOT = Path(os.getenv("MENNZLORE_PROJECTS_ROOT", str(Path.home() / "Desktop" / "projects")))
+BASELINE_PATH = PROJECTS_ROOT / "baseline_before.json"
+baseline = json.loads(BASELINE_PATH.read_text(encoding='utf-8'))
 
 projects = {
-    'alice': r'C:\Users\mennz\Desktop\projects\alices-adventures-in-wonderland-carroll',
-    'lookingglass': r'C:\Users\mennz\Desktop\projects\through-the-looking-glass-carroll',
-    'callwild': r'C:\Users\mennz\Desktop\projects\the-call-of-the-wild-london',
+    'alice': str(PROJECTS_ROOT / 'alices-adventures-in-wonderland-carroll'),
+    'lookingglass': str(PROJECTS_ROOT / 'through-the-looking-glass-carroll'),
+    'callwild': str(PROJECTS_ROOT / 'the-call-of-the-wild-london'),
 }
 prefixes = {
     'alice': 'alices-adventures-in-wonderland-carroll',

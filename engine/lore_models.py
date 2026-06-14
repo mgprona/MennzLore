@@ -157,46 +157,52 @@ class MicroFactsFinal(BaseModel):
         """Cross-field validation: every in_scene_id must reference a real scene.
            Catches hallucinated scene references from LLM output."""
         existing_scenes = {scene.scene_id for scene in self.scene_details}
+        errors = []
 
         for kpp in self.key_plot_points:
             if kpp.in_scene_id not in existing_scenes:
-                raise ValueError(
+                errors.append(
                     f"HALLUCINATION: {kpp.point_id} references scene "
-                    f"{kpp.in_scene_id} which doesn't exist. "
-                    f"Valid scenes: {existing_scenes}"
+                    f"{kpp.in_scene_id} which doesn't exist."
                 )
         for beh in self.character_behaviors:
             if beh.in_scene_id not in existing_scenes:
-                raise ValueError(
+                errors.append(
                     f"HALLUCINATION: behavior '{beh.character}: {beh.behavior[:30]}' "
                     f"references scene {beh.in_scene_id}"
                 )
         for item in self.items_of_interest:
             if item.in_scene_id not in existing_scenes:
-                raise ValueError(
+                errors.append(
                     f"HALLUCINATION: item '{item.item}' references scene {item.in_scene_id}"
                 )
         for cs in self.character_states:
             if cs.in_scene_id not in existing_scenes:
-                raise ValueError(
+                errors.append(
                     f"HALLUCINATION: character state '{cs.character}: {cs.state}' "
                     f"references scene {cs.in_scene_id}"
                 )
         for dlg in self.dialogue_summaries:
             if dlg.in_scene_id not in existing_scenes:
-                raise ValueError(
+                errors.append(
                     f"HALLUCINATION: dialogue {dlg.dialogue_id} references scene {dlg.in_scene_id}"
                 )
         for con in self.cross_chapter_connections:
             if con.in_scene_id not in existing_scenes:
-                raise ValueError(
+                errors.append(
                     f"HALLUCINATION: connection {con.connection_id} references scene {con.in_scene_id}"
                 )
         for disc in self.lore_discoveries:
             if disc.in_scene_id not in existing_scenes:
-                raise ValueError(
+                errors.append(
                     f"HALLUCINATION: discovery {disc.discovery_id} references scene {disc.in_scene_id}"
                 )
+        if errors:
+            raise ValueError(
+                f"HALLUCINATION — {len(errors)} bad scene refs found:\n" +
+                "\n".join(f"  - {e}" for e in errors) +
+                f"\n  Valid scenes: {existing_scenes}"
+            )
         return self
 
 

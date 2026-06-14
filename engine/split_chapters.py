@@ -78,6 +78,10 @@ _HEADING_PATTERNS = [
         re.I,
     ),
     re.compile(r'^[IVXLC]+\.?\s*$'),                      # I  II  III  IV ...
+    # Titled chapters: centered all-caps text with spaces (e.g.
+    # "STORY OF THE DOOR", "THE CAREW MURDER CASE").
+    # Must be >= 15 chars, have no lowercase letters, and have at least 2 words.
+    re.compile(r'^[A-Z][A-Z\s\.\,\']{11,}$'),             # STORY OF THE DOOR
 ]
 
 
@@ -202,10 +206,11 @@ def split_chapters(project_dir: str, prefix: str) -> list[dict]:
 
     if not heading_indices:
         raise ValueError(
-            f"No chapter headings detected in {raw_path}.\n"
-            f"Checked patterns: 'Chapter N', Roman numerals (I II III...).\n"
-            f"Check the raw file and adjust manually if needed."
-        )
+                    f"No chapter headings detected in {raw_path}.\n"
+                    f"Checked patterns: 'Chapter N', Roman numerals (I II III...), "
+                    f"titled all-caps headings (STORY OF THE DOOR).\n"
+                    f"Check the raw file and adjust manually if needed."
+                )
 
     # split into chunks: [heading_i .. next_heading_i)
     clean_dir = os.path.join(project_dir, "clean")

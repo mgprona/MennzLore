@@ -1,124 +1,83 @@
-# Phase 3.1 — Global Lore + Name Map Extraction Prompt
+# Phase 3.1 — Global Lore: Name Map + Chapter Appearance
 
-This is the system + user prompt sent to the connected AI for Phase 3.1
-(global lore extraction). The Python code in `engine/phase3_global_lore.py`
-reads this file and concatenates it with the per-chapter text payload.
+System prompt and user template for Phase 3.1. The engine reads this file at build
+time and concatenates it with the per-chapter text payload via `_build_user_prompt()`.
 
-## System rules
+**Scope (v5.1 names-only path):** Produce ONLY `name_map` and `chapter_appearance`.
+The engine auto-generates `global_lore` and `timeline_framework` skeletons from these two.
+This cuts Phase 3.1 token cost ~50% vs the full 4-key path.
+
+## System prompt
 
 ```
-You are a literary lore analyst. You read the full text of a novel split into chapters and produce four structured JSON artefacts.
+You are a literary lore analyst. You read the full text of a novel split into chapters and identify character names and aliases.
 
-RULES:
-1. Every fact must be sourced from the text — no invention.
-2. Preserve exact spelling of all proper nouns (character names, place names, creature names, invented words).
-3. lore_type values: "normal" (recognisable English word/name), "fantasy_name" (invented proper noun), "in_world_language" (word from the story's fictional language).
-4. episode IDs use format EP001, EP002, ... EP0NN (zero-padded 3 digits).
-5. Return ONLY a JSON object with exactly four top-level keys: global_lore, name_map, timeline_framework, chapter_appearance.
+Your output must be a clean JSON object containing character names, their aliases, and the chapters they appear in. Do NOT write descriptions, character arcs, or relationships. Focus strictly on names and aliases.
 ```
 
 ## User prompt template
 
-The code substitutes `{prefix}` and `{chapters_block}` at build time.
+The engine substitutes `{prefix}`, `{N}`, the name candidates block, and
+`{chapters_block}` at build time (see `engine/phase3_global_lore.py` →
+`_build_user_prompt()`).
 
 ```
 Project prefix: {prefix}
 Total chapters: {N}
 
-CHAPTER TEXTS:
-{chapters_block}
+Here are known character names found by pattern matching (pattern candidates):
+[{candidates}]
+
+Read ALL chapters and identify:
+1. Any MISSING character names — especially disguised names (objects used as names, nicknames, titles used as names).
+2. All aliases for each character (e.g. 'Heans' = 'Sir William' = 'Sir William Heans').
+3. Which episodes each character appears in.
+
+Do NOT write descriptions, arcs, or relationships. Names and aliases ONLY. Engine will handle the rest.
 
 Produce exactly this JSON structure (no extra keys, no markdown wrapper):
 
 {
-  "global_lore": {
-    "book_metadata": {
-      "title": "...",
-      "author": "...",
-      "project": "{prefix}",
-      "total_chapters": {N},
-      "genre": ["..."],
-      "series_context": "...",
-      "main_theme": "...",
-      "narrative_device": "...",
-      "timespan": "...",
-      "pov_characters": ["..."],
-      "proper_noun_guard": "Active. Preserve exact source spelling."
-    },
-    "characters": [ {
-      "name": "...", "role": "...", "core_identity": "...", "character_arc": "...",
-      "visual_profile": "...",
-      "key_relationships": [{"with": "...", "relation_type": "..."}],
-      "first_appearance": "EP001",
-      "chapters_present": ["EP001"],
-      "status_at_end": "..."
-    } ],
-    "mystery_and_clues_tracker": [ {
-      "mystery": "...", "introduced_in_chapter": "EP001", "resolved_in_chapter": "EP008",
-      "clues": ["..."], "resolution": "...", "significance": "..."
-    } ],
-    "global_timeline_milestones": [ {
-      "chapter_range": "EP001", "event_summary": "...", "world_state_change": "..."
-    } ],
-    "world_building_and_motifs": [ {
-      "concept": "...", "type": "...", "description": "...", "significance_to_plot": "..."
-    } ]
-  },
-
   "name_map": {
     "project": "{prefix}",
     "generated_phase": "3.1",
     "name_map": {
       "Canonical Name": {
-        "aliases": ["..."],
-        "type": "character|location|organization|creature|concept|object|vehicle|technology|culture|motif|ritual_phrase|historical_event|language",
+        "aliases": ["Alias 1", "Alias 2"],
+        "type": "character",
         "lore_type": "normal|fantasy_name|in_world_language",
         "primary_source": "EP001",
-        "episodes": ["EP001"]
+        "episodes": ["EP001", "EP002"]
       }
     }
   },
-
-  "timeline_framework": {
-    "project": "{prefix}",
-    "timeline_framework": [ {
-      "chapter_id": "EP001",
-      "title": "CHAPTER I",
-      "day": 1,
-      "relative_time": "...",
-      "primary_location": "...",
-      "summary": "...",
-      "major_milestone_refs": [0],
-      "continuity_notes": "..."
-    } ]
-  },
-
   "chapter_appearance": {
     "project": "{prefix}",
     "chapter_appearance": {
       "EP001": {
-        "characters_present": ["..."],
-        "mentioned_only": ["..."],
-        "locations": ["..."],
-        "creatures": ["..."],
-        "concepts": ["..."]
+        "characters_present": ["Canonical Name 1", "Canonical Name 2"]
       }
     }
   }
 }
 ```
 
-## Why a separate file
+## Notes
 
-This is consistent with the rest of the pipeline:
-- `prompts/pass11_architect_prompt.md`
-- `prompts/pass12_profiler_prompt.md`
-- `prompts/pass13_chronicler_prompt.md`
-- `prompts/pass2_sliding_window_prompt.md`
-- `prompts/sa_combined_prompt.md`
-- `prompts/sa_lore_prompt.md`
+- `type` values: `character`, `location`, `organization`, `creature`, `concept`, `object`
+- `lore_type` values: `normal` (recognisable English word/name), `fantasy_name` (invented proper noun), `in_world_language` (fictional-language word)
+- Episode IDs use format EP001, EP002, ... EP0NN (zero-padded 3 digits)
+- The engine calls `save_global_lore` with the returned JSON; it unwraps `{"item": [...]}` array wrappers automatically
 
-The Python source keeps a fallback inline copy of the system + user prompt
-template so the file is not strictly required at runtime, but the
-authoritative copy is here. To change the prompt, edit this file (and
-mirror the change in `engine/phase3_global_lore.py`).
+## Why only 2 keys (not 4)
+
+The full 4-key output (`global_lore`, `name_map`, `timeline_framework`, `chapter_appearance`)
+was used in v5.0 but costs ~2× more tokens for character/world detail that downstream
+engine phases can generate deterministically from the name map.
+
+v5.1 engine auto-generates:
+- `global_lore` skeleton from `name_map` entries
+- `timeline_framework` skeleton from `chapter_appearance` keys
+
+If you want full character descriptions in `global_lore`, pass all 4 keys to
+`save_global_lore` — the engine accepts them and skips skeleton generation.

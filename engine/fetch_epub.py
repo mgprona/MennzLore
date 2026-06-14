@@ -18,6 +18,7 @@ import zipfile
 from datetime import datetime, timezone
 from xml.etree import ElementTree as ET
 from pathlib import Path
+import urllib.parse
 
 
 XHTML_NS = "http://www.w3.org/1999/xhtml"
@@ -66,6 +67,53 @@ def _find_author_title(opf_path: str, z: zipfile.ZipFile) -> tuple[str, str]:
         return title.strip(), creator.strip()
     except Exception:
         return "", ""
+
+
+def _find_spine_order(opf_path: str, z: zipfile.ZipFile) -> list[str]:
+    """Parse the OPF file and return the list of hrefs in spine order."""
+    try:
+        text = z.read(opf_path).decode("utf-8", errors="replace")
+        root = ET.fromstring(text)
+        
+        ns = {"opf": "http://www.idpf.org/2007/opf", "dc": "http://purl.org/dc/elements/1.1/"}
+        
+        # Get manifest items: id -> href
+        manifest_items = {}
+        manifest_elem = root.find(".//opf:manifest", namespaces=ns) or root.find(".//manifest")
+        if manifest_elem is not None:
+            for item in list(manifest_elem):
+                iid = item.get("id")
+                href = item.get("href")
+                if iid and href:
+                    manifest_items[iid] = href
+        
+        # Get spine itemrefs
+        spine_hrefs = []
+        spine_elem = root.find(".//opf:spine", namespaces=ns) or root.find(".//spine")
+        if spine_elem is not None:
+            for itemref in list(spine_elem):
+                idref = itemref.get("idref")
+                if idref in manifest_items:
+                    href = manifest_items[idref]
+                    opf_dir = os.path.dirname(opf_path)
+                    if opf_dir:
+                        resolved_href = opf_dir + "/" + href
+                    else:
+                        resolved_href = href
+                    resolved_href = urllib.parse.unquote(resolved_href)
+                    parts = []
+                    for part in resolved_href.split('/'):
+                        if part == '..':
+                            if parts:
+                                parts.pop()
+                        elif part != '.' and part != '':
+                            parts.append(part)
+                    normalized_href = "/".join(parts)
+                    spine_hrefs.append(normalized_href)
+        return spine_hrefs
+    except Exception as e:
+        print(f"[WARNING] Failed to parse OPF spine: {e}")
+        return []
 
 
 def epub_to_project(epub_path: str, base_dir: str = ".", prefix: str = "",
@@ -119,23 +167,55 @@ def epub_to_project(epub_path: str, base_dir: str = ".", prefix: str = "",
                 chapter_candidates.append((int(m.group(1)), f))
                 is_pre_split = True
 
-        # Strategy B: check for heading-based chapters inside HTML
+        # Strategy B: check for heading-based chapters inside HTML, using OPF spine order if available
+        spine_files = []
+        for opf in opf_files:
+            spine_files = _find_spine_order(opf, z)
+            if spine_files:
+                break
+        
         if not chapter_candidates:
-            html_files = [f for f in all_files if f.endswith((".xhtml", ".html", ".htm"))
-                          and "nav" not in f.lower() and "toc" not in f.lower()
-                          and "copyright" not in f.lower() and "metadata" not in f.lower()
-                          and "front" not in f.lower() and "back" not in f.lower()]
-            for f in html_files:
-                size = z.getinfo(f).file_size
-                if size > 5000:
-                    chapter_candidates.append((len(chapter_candidates) + 1, f))
+            if spine_files:
+                html_spine = [f for f in spine_files if f.endswith((".xhtml", ".html", ".htm"))
+                               and "nav" not in f.lower() and "toc" not in f.lower()
+                               and "copyright" not in f.lower() and "metadata" not in f.lower()
+                               and "front" not in f.lower() and "back" not in f.lower()]
+                for f in html_spine:
+                    exact_file = next((zf for zf in all_files if zf.lower() == f.lower()), None)
+                    if exact_file:
+                        try:
+                            size = z.getinfo(exact_file).file_size
+                            if size > 5000:
+                                chapter_candidates.append((len(chapter_candidates) + 1, exact_file))
+                        except Exception:
+                            pass
+            
+            if not chapter_candidates:
+                html_files = [f for f in all_files if f.endswith((".xhtml", ".html", ".htm"))
+                              and "nav" not in f.lower() and "toc" not in f.lower()
+                              and "copyright" not in f.lower() and "metadata" not in f.lower()
+                              and "front" not in f.lower() and "back" not in f.lower()]
+                for f in html_files:
+                    size = z.getinfo(f).file_size
+                    if size > 5000:
+                        chapter_candidates.append((len(chapter_candidates) + 1, f))
 
         # Strategy C: one big file, split by chapter headings
         if not chapter_candidates:
-            html_files = sorted([f for f in all_files if f.endswith((".xhtml", ".html", ".htm"))
-                                 and "nav" not in f.lower() and "toc" not in f.lower()])
-            if html_files:
-                chapter_candidates.append((1, html_files[0]))
+            if spine_files:
+                html_spine = [f for f in spine_files if f.endswith((".xhtml", ".html", ".htm"))
+                              and "nav" not in f.lower() and "toc" not in f.lower()]
+                for f in html_spine:
+                    exact_file = next((zf for zf in all_files if zf.lower() == f.lower()), None)
+                    if exact_file:
+                        chapter_candidates.append((1, exact_file))
+                        break
+            
+            if not chapter_candidates:
+                html_files = sorted([f for f in all_files if f.endswith((".xhtml", ".html", ".htm"))
+                                     and "nav" not in f.lower() and "toc" not in f.lower()])
+                if html_files:
+                    chapter_candidates.append((1, html_files[0]))
 
         if not chapter_candidates:
             raise ValueError("No chapter content found in EPUB. "

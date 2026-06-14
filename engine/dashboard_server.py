@@ -13,9 +13,38 @@ import http.server
 import socketserver
 import urllib.parse
 
+from pathlib import Path
 PORT = 8000
-SCRATCH_DIR = r"C:\Users\mennz\.gemini\antigravity\scratch"
 DASHBOARD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard")
+
+# Dynamic PROJECTS_ROOT detection
+PROJECTS_ROOT = os.getenv("MENNZLORE_PROJECTS_ROOT", None)
+if not PROJECTS_ROOT:
+    candidates = [
+        os.path.join(os.path.expanduser("~"), "lore-projects"),
+        os.path.join(os.path.expanduser("~"), "Desktop", "projects"),
+        os.getcwd(),
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            has_project = False
+            try:
+                for sub in os.listdir(c):
+                    subpath = os.path.join(c, sub)
+                    if os.path.isdir(subpath):
+                        if os.path.isdir(os.path.join(subpath, "micro_facts")) or os.path.isdir(os.path.join(subpath, "analysis", "micro_facts")):
+                            has_project = True
+                            break
+            except Exception:
+                pass
+            if has_project:
+                PROJECTS_ROOT = c
+                break
+    if not PROJECTS_ROOT:
+        PROJECTS_ROOT = os.path.join(os.path.expanduser("~"), "lore-projects")
+
+print(f"[Dashboard Server] Projects root folder: {os.path.abspath(PROJECTS_ROOT)}")
 
 class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
@@ -28,7 +57,14 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         parsed_url = urllib.parse.urlparse(self.path)
         path = parsed_url.path
         
-        # 1. API Endpoint: Project Manifest
+        # 1. API Endpoint: List Projects
+        # GET /api/projects
+        if path == "/api/projects":
+            projects = self.list_available_projects()
+            self.send_json_response(projects)
+            return
+            
+        # 2. API Endpoint: Project Manifest
         # GET /api/project/<project_name>
         project_match = re.match(r"^/api/project/([^/]+)$", path)
         if project_match:
@@ -37,7 +73,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json_response(manifest)
             return
             
-        # 2. API Endpoint: SVG Map
+        # 3. API Endpoint: SVG Map
         # GET /api/project/<project_name>/map
         map_match = re.match(r"^/api/project/([^/]+)/map$", path)
         if map_match:
@@ -52,7 +88,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_error(404, "Map SVG not found")
             return
             
-        # 3. API Endpoint: Episode micro-facts
+        # 4. API Endpoint: Episode micro-facts
         # GET /api/project/<project_name>/episode/<ep_id>
         ep_match = re.match(r"^/api/project/([^/]+)/episode/(EP\d+)$", path)
         if ep_match:
@@ -90,13 +126,54 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode("utf-8"))
 
+    def list_available_projects(self):
+        projects = []
+        if not os.path.exists(PROJECTS_ROOT):
+            return projects
+            
+        for name in os.listdir(PROJECTS_ROOT):
+            path = os.path.join(PROJECTS_ROOT, name)
+            if os.path.isdir(path):
+                mf_dir = os.path.join(path, "micro_facts")
+                if not os.path.isdir(mf_dir):
+                    mf_dir = os.path.join(path, "analysis", "micro_facts")
+                if os.path.isdir(mf_dir):
+                    proj_dir, prefix = self.get_project_dir_and_prefix(name)
+                    title = name
+                    src_json = os.path.join(proj_dir, "verification", f"{prefix}_source.json")
+                    if os.path.exists(src_json):
+                        try:
+                            with open(src_json, "r", encoding="utf-8") as f:
+                                src_data = json.load(f)
+                            title = src_data.get("title", title)
+                        except Exception:
+                            pass
+                            
+                    projects.append({
+                        "name": name,
+                        "prefix": prefix,
+                        "title": title
+                    })
+        return sorted(projects, key=lambda x: x["title"])
+
+    def get_project_dir_and_prefix(self, project_name):
+        proj_dir = os.path.join(PROJECTS_ROOT, project_name)
+        prefix = project_name
+        ver_dir = os.path.join(proj_dir, "verification")
+        if os.path.isdir(ver_dir):
+            src_files = glob.glob(os.path.join(ver_dir, "*_source.json"))
+            if src_files:
+                # Find the one that matches _source.json
+                for s in src_files:
+                    if s.endswith("_source.json"):
+                        prefix = os.path.basename(s).replace("_source.json", "")
+                        break
+        return proj_dir, prefix
+
     def get_project_manifest(self, project_name):
-        proj_dir = os.path.join(SCRATCH_DIR, project_name)
+        proj_dir, prefix = self.get_project_dir_and_prefix(project_name)
         if not os.path.exists(proj_dir):
             return {"error": f"Project folder not found: {project_name}"}
-
-        # Resolve prefix
-        prefix = "voodoo-planet-qa" if project_name == "oldlore" else "tm" if "time-machine" in project_name else "pan" if "pan" in project_name else "dyfed" if "dyfed" in project_name else "chula" if "chula" in project_name else project_name
         
         # Look for micro_facts files
         mf_dir = os.path.join(proj_dir, "micro_facts")
@@ -154,7 +231,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         }
 
     def get_project_map(self, project_name):
-        proj_dir = os.path.join(SCRATCH_DIR, project_name)
+        proj_dir, _ = self.get_project_dir_and_prefix(project_name)
         svg_path = os.path.join(proj_dir, "output", "spatial", "chart_map_skeleton.svg")
         if os.path.exists(svg_path):
             with open(svg_path, "r", encoding="utf-8") as f:
@@ -162,8 +239,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         return None
 
     def get_episode_data(self, project_name, ep_id):
-        proj_dir = os.path.join(SCRATCH_DIR, project_name)
-        prefix = "voodoo-planet-qa" if project_name == "oldlore" else "tm" if "time-machine" in project_name else "pan" if "pan" in project_name else "dyfed" if "dyfed" in project_name else "chula" if "chula" in project_name else project_name
+        proj_dir, prefix = self.get_project_dir_and_prefix(project_name)
         
         # Look for micro_facts files
         mf_dir = os.path.join(proj_dir, "micro_facts")
