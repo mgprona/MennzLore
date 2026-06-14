@@ -671,7 +671,65 @@ def assemble_lorebook(project_dir, prefix, prior_lore_context: str = None):
                             "appearance": cb.get("physical_description", ""),
                             "clothing": clothing,
                             "props": cb.get("props_held", []),
-                        })
+                                                    })
+        # ── Auto-fill visual_style from global_lore for characters
+        #     that had no visual_profile in micro_facts ──────
+        if global_lore:
+            ERA_STYLES = {
+                "victorian": "frock coat, top hat, corset, bustle, gaslight",
+                "edwardian": "tailcoat, boater hat, Gibson girl, high collar",
+                "medieval": "tunic, chainmail, cloak, wimple, leather boots",
+                "gothic": "surcoat, mail, hood, crossbow, leather, iron",
+                "ancient": "toga, tunic, sandals, laurel wreath, linen",
+            }
+            ROLE_VIS = {
+                "protagonist": "commanding presence, central figure",
+                "antagonist": "shadowy presence, menacing aura",
+                "hero": "noble bearing, heroic stance, determined",
+                "villain": "sinister demeanor, dark attire, calculating",
+                "doctor": "professional bearing, medical coat, spectacles",
+                "detective": "keen-eyed, trench coat, observant attitude",
+                "priest": "clerical collar, dark vestments, solemn",
+                "soldier": "military bearing, uniform, disciplined",
+                "sailor": "nautical attire, cap, weathered complexion",
+                "servant": "deferential posture, practical attire",
+                "king": "crown, royal robe, scepter, majestic bearing",
+                "queen": "crown, elegant gown, jewels, regal bearing",
+            }
+            era_str = ""
+            for era_key, era_val in ERA_STYLES.items():
+                if era_key in str(metadata.get("genre", [])) or era_key in str(metadata.get("series_context", "")).lower():
+                    era_str = era_val
+                    break
+            for gl_char in global_lore.get("characters", []):
+                if not isinstance(gl_char, dict):
+                    continue
+                cname = gl_char.get("name", "")
+                if not cname or any(cname == n for n in char_visuals):
+                    continue
+                desc = gl_char.get("description", "") or gl_char.get("core_identity", "")
+                role = (gl_char.get("role", "") or "").lower()
+                role_vis = ""
+                for role_key, role_val in ROLE_VIS.items():
+                    if role_key in role:
+                        role_vis = role_val
+                        break
+                vis_parts = []
+                if era_str:
+                    vis_parts.append(era_str)
+                if role_vis:
+                    vis_parts.append(role_vis)
+                if desc and len(desc) > 10:
+                    vis_parts.append(desc[:100])
+                combined = "; ".join(vis_parts) if vis_parts else ""
+                desc_final = combined or (desc[:200] if desc else cname + " in period attire")
+                char_visuals[cname].append({
+                    "ep": "EP001",
+                    "day": "",
+                    "appearance": desc_final,
+                    "clothing": era_str if era_str else "",
+                    "props": [],
+                })
         for s in p1.get("scene_details", []):
             if not isinstance(s, dict): continue
             raw_loc = s.get("location", "")

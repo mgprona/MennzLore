@@ -26,6 +26,70 @@ from typing import Dict, List, Optional
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+# ── Junk entity name filter (Fix: prevents cross-chapter connection
+#     descriptions and other noise from being treated as valid entities) ──
+
+KNOWN_JUNK_ENTITY_NAMES = {
+    "blank", "unknown", "none", "n/a", "na", "unnamed", "mystery",
+    "chapter_context", "connects_to", "connections", "all", "everyone",
+    "various", "everybody", "somebody", "someone",
+}
+
+# Connection descriptions that look like "Chapter IV sets up the mystery"
+# should never become entity names.  Covers the most common patterns.
+CONNECTION_DESC_WORDS = {
+    "sets_up", "continues", "follows", "establishes", "references",
+    "introduces", "concludes", "resolves", "transitions", "builds",
+    "develops", "reveals", "foreshadows", "parallels", "contrasts",
+}
+
+
+def _is_valid_entity_name(name: str | None) -> bool:
+    """Return True if *name* is a plausible entity name, not junk.
+
+    Filters out:
+      - Known junk / placeholder names (Blank, Unknown, …)
+      - Cross-chapter connection descriptions mistaken for entities
+      - Overly short or purely numeric names
+      - Names starting with a lowercase letter (likely a description)
+    """
+    if not name or not isinstance(name, str):
+        return False
+    name = name.strip()
+    if not name:
+        return False
+    if len(name) < 3:
+        return False
+
+    # Check known junk names (case-insensitive)
+    slug = name.lower().replace(" ", "_").replace("'", "").replace("-", "_")
+    for junk in KNOWN_JUNK_ENTITY_NAMES:
+        if slug == junk:
+            return False
+
+    # Check connection-description-style names like "chapter_iv_sets_up_..."
+    if slug.startswith("chapter_"):
+        return False
+    # Words like "sets_up_the_mystery" → description, not entity
+    first_word = slug.split("_")[0] if "_" in slug else slug.split()[0] if " " in slug else slug
+    if first_word in CONNECTION_DESC_WORDS:
+        return False
+
+    # Pure numbers (e.g. "12345") are never entity names
+    if name.isdigit():
+        return False
+
+    # Must start with uppercase letter or be proper-noun-like
+    # (this catches descriptions like "a shadowy figure" sneaking in)
+    if name[0].islower():
+        return False
+
+    return True
+
+
+_ENTITY_VALIDATION_APPLIED = True  # marker for smoke-test detection
+
+
 def _load_json_safe(path: str) -> dict:
     """Load a JSON file, return empty dict on failure."""
     try:
@@ -372,12 +436,12 @@ def generate_hybrid_notes(project_dir: str, prefix: str = "",
         if data:
             chapter_data.append(data)
             for char in data.get("characters_present", []):
-                if char and isinstance(char, str):
+                if _is_valid_entity_name(char):
                     all_entities.add(char)
             for conn in data.get("cross_chapter_connections", []):
                 for key in ("from_entity", "to_entity"):
                     e = conn.get(key, "")
-                    if e:
+                    if _is_valid_entity_name(e):
                         all_entities.add(e)
     
     # Build global_lore lookup

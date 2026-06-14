@@ -21,7 +21,30 @@ except ImportError:
 
 # Optional real-world gazetteer (loaded from <prefix>_gazetteer.json if present).
 # For fictional/alien settings this stays empty → everything is fantasy-placed.
+# Also automatically loads the built-in world_gazetteer.json from data/ for
+# real-world location resolution without external API calls.
 KNOWN_COORDS = {}
+
+# ── Built-in world gazetteer (Fix: no external API needed) ──────────────────
+_GAZETTEER_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
+_GAZETTEER_PATH = os.path.join(_GAZETTEER_DIR, "world_gazetteer.json")
+if os.path.exists(_GAZETTEER_PATH):
+    try:
+        with open(_GAZETTEER_PATH, encoding="utf-8") as _f:
+            _gaz = json.load(_f)
+        for _k, _v in _gaz.items():
+            if _k == "metadata":
+                continue
+            if isinstance(_v, list) and len(_v) >= 3:
+                KNOWN_COORDS[_k.lower().strip()] = tuple(_v[:3])
+        print(f"  [Gazetteer] Built-in world gazetteer loaded: {len(KNOWN_COORDS)} entries")
+        _meta = _gaz.get("metadata", {})
+        _version = _meta.get("version", "?")
+        _entries = _meta.get("entries", len(KNOWN_COORDS))
+        print(f"  [Gazetteer] v{_version} — {_entries} locations covering "
+              f"{len(set(v[2] for v in KNOWN_COORDS.values() if len(v) > 2 and isinstance(v[2], str)))} countries")
+    except Exception as _e:
+        print(f"  [Gazetteer] Warning: built-in gazetteer load failed: {_e}")
 
 FANTASY_ZONES = {
     "mountain_peak": {"x": (0.25, 0.75), "y": (0.05, 0.30)},
@@ -39,9 +62,15 @@ def resolve_location(name):
     n = re.sub(r'^the\s+', '', name.strip().lower())
     n = normalize_location(n)
     n = re.sub(r'\s*[--/].*$', '', n).strip()
-    n = re.sub(r'\s+(?:house|street|road|square|avenue|lane|rooms|apartment)\s*$', '', n).strip()
+    # Try full name first (before stripping suffixes)
     if n in KNOWN_COORDS:
         return KNOWN_COORDS[n]
+    # Now strip residential suffixes and try again
+    stripped = re.sub(r'\s+(?:house|street|road|square|avenue|lane|rooms|apartment)\s*$', '', n).strip()
+    if stripped in KNOWN_COORDS:
+        return KNOWN_COORDS[stripped]
+    if stripped != n:
+        n = stripped
     for w in sorted(n.split(), key=len, reverse=True):
         if len(w) > 3 and w.lower() in KNOWN_COORDS:
             return KNOWN_COORDS[w.lower()]

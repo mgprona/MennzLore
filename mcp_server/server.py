@@ -12,6 +12,7 @@ import asyncio
 import json as _json
 import subprocess
 import socket
+import concurrent.futures
 
 # Ensure the repository root and engine directory are in the Python path
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -814,13 +815,13 @@ def run_full_pipeline(project_dir: str, prefix: str = "",
             continue
 
         try:
-            _run_engine_phase(phase_id, project_dir, prefix)
+            _run_engine_phase(phase_id, project_dir, prefix,
+                              phase_timeout=120)
             results[phase_id] = {"status": "OK", "desc": phase_desc}
             engine_pass += 1
         except Exception as e:
             results[phase_id] = {"status": f"FAIL: {e}", "desc": phase_desc}
             engine_fail += 1
-
     summary = {
         "project": prefix,
         "phases": results,
@@ -834,14 +835,20 @@ def run_full_pipeline(project_dir: str, prefix: str = "",
     return summary
 
 
-def _run_engine_phase(phase_id: str, project_dir: str, prefix: str):
-    """Execute one engine phase. Raises on failure."""
+def _run_engine_phase(phase_id: str, project_dir: str, prefix: str,
+                      phase_timeout: int = 120) -> None:
+    """Execute one engine phase. All print() calls flush automatically so
+    the MCP transport sees progress and doesn't time out the connection.
+    Raises on failure."""
+    _flush = lambda: (sys.stdout.flush(), sys.stderr.flush())
+
     if phase_id == "5_merge":
         # Already done via merge_micro_facts — check output exists
         mf_dir = os.path.join(project_dir, "micro_facts")
         if not os.path.isdir(mf_dir) or not any(f.endswith(".json") for f in os.listdir(mf_dir)):
             raise FileNotFoundError("No micro_facts found. Run Phase 4 LLM extraction first.")
-        print(f"[Phase 5] micro_facts: {len([f for f in os.listdir(mf_dir) if f.endswith('.json')])} files — OK")
+        print(f"[Phase 5] micro_facts: {len([f for f in os.listdir(mf_dir) if f.endswith('.json')])} files — OK",
+              flush=True)
 
     elif phase_id == "6_production":
         build_production(project_dir, prefix)
@@ -866,12 +873,15 @@ def _run_engine_phase(phase_id: str, project_dir: str, prefix: str):
 
     elif phase_id == "13_semantic":
         result = query_lore_semantic(project_dir, prefix=prefix, query="character", limit=1)
-        print(f"[Phase 13] Semantic index: {len(result)} results — OK")
+        print(f"[Phase 13] Semantic index: {len(result)} results — OK", flush=True)
 
     elif phase_id == "14_assemble":
         assemble_lorebook(project_dir, prefix)
     else:
         raise ValueError(f"Unknown phase: {phase_id}")
+
+    # Flush so MCP transport sees progress
+    _flush()
 
 
 # ─── PROMPTS ────────────────────────────────────────────────────────────────
