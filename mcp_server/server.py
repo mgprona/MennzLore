@@ -12,6 +12,7 @@ import asyncio
 import json as _json
 import subprocess
 import socket
+import re
 import concurrent.futures
 
 # Ensure the repository root and engine directory are in the Python path
@@ -109,6 +110,7 @@ from engine.vector_rag import query_lore_semantic, VectorRAG, VECTOR_RAG_AVAILAB
 from engine.image_generator import generate_storyboard
 from engine.youtube_acquire import analyze_playlist_transcripts, run_playlist_acquisition, get_working_proxy_pool
 from engine.fetch_epub import epub_to_project
+from engine.acquire_se import fetch_se, fetch_se_by_title
 
 
 # Initialize FastMCP Server
@@ -523,24 +525,70 @@ def acquire_by_id(book_id: int, base_dir: str = ".") -> dict:
         return {"status": "error", "message": str(e)}
 
 @mcp.tool()
-def acquire_by_title(title: str, author: str, base_dir: str = ".") -> dict:
+def acquire_se(title: str, author: str = "", base_dir: str = ".") -> dict:
     """
-    Phase 1 (recommended): Find a public-domain book by TITLE + AUTHOR via gutendex,
-    download its raw text (PG-19 first, Project Gutenberg fallback), scaffold the
-    project directory, and write provenance. Output uses the canonical
-    `<prefix>_full.txt` naming that the downstream pipeline expects.
+    Phase 1 (Standard Ebooks): Find a public-domain book by TITLE + AUTHOR
+    via Standard Ebooks (standardebooks.org), clone its GitHub repo, and
+    extract clean chapter text directly. Chapters are already pre-split as
+    XHTML files — no Phase 2 split needed.
+
+    Best quality source: no Gutenberg boilerplate, no OCR errors,
+    semantically marked-up XHTML, proofread by volunteers.
 
     Args:
-        title: Book title (e.g. 'Voodoo Planet').
-        author: Author name (e.g. 'Andre Norton').
-        base_dir: Directory under which the `<prefix>/` project folder is created (default: cwd).
+        title: Book title (e.g. 'A Study in Scarlet').
+        author: Author name (e.g. 'Arthur Conan Doyle'). Optional but recommended.
+        base_dir: Directory under which the project folder is created (default: cwd).
+    Returns:
+        dict with project_dir, prefix, chapter_count, chapters list.
     """
-    from engine.fetch_raw import fetch_raw
     try:
-        provenance = fetch_raw(title, author, base_dir)
-        return {"status": "success", "result": provenance}
+        if author:
+            result = fetch_se_by_title(title, author, base_dir)
+        else:
+            # Without author, just try the title slug directly
+            from engine.acquire_se import _se_repo_name, fetch_se
+            repo_name = _se_repo_name("unknown", title)
+            result = fetch_se(f"standardebooks/{repo_name}", base_dir)
+
+        if result.get("status") == "not_found":
+            return {"status": "error", "message": result["message"]}
+        return result
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+def acquire_by_title(title: str, author: str, base_dir: str = ".") -> dict:
+    """
+    Phase 1 (smart): Find a public-domain book by TITLE + AUTHOR.
+    Auto-detects the best source:
+      1. Standard Ebooks (cleanest, no Phase 2 split needed)
+      2. PG-19 (Project Gutenberg research dataset)
+      3. Project Gutenberg (direct, fallback)
+
+    Args:
+        title: Book title (e.g. 'A Study in Scarlet').
+        author: Author name (e.g. 'Arthur Conan Doyle').
+        base_dir: Directory under which the project folder is created (default: cwd).
+    Returns:
+        dict with source, project_dir, prefix, chapter_count.
+    """
+    # Strategy 1: Try Standard Ebooks first (best quality)
+    try:
+        from engine.acquire_se import fetch_se_by_title
+        result = fetch_se_by_title(title, author, base_dir)
+        if result.get("status") == "success":
+            return {"status": "success", "source": "Standard Ebooks", **result}
+    except Exception:
+        pass
+
+    # Strategy 2: Fallback to Project Gutenberg (PG-19 then PG directly)
+    try:
+        from engine.fetch_raw import fetch_raw
+        provenance = fetch_raw(title, author, base_dir)
+        return {"status": "success", "source": "Project Gutenberg", "result": provenance}
+    except Exception as e:
+        return {"status": "error", "message": f"All sources failed. Standard Ebooks: not found. Project Gutenberg: {e}"}
 
 @mcp.tool()
 def split_into_chapters(project_dir: str, prefix: str = "") -> dict:
@@ -549,14 +597,34 @@ def split_into_chapters(project_dir: str, prefix: str = "") -> dict:
     per-chapter files `clean/<prefix>_EP###.txt`, detecting chapter headings with a
     blank-line guard. Also writes a chapter manifest.
 
+    If clean chapter files already exist (e.g. from Standard Ebooks acquisition),
+    this function auto-detects and returns success without re-splitting.
+
     Args:
-        project_dir: Path to the project directory (must contain raw/<prefix>_full.txt).
+        project_dir: Path to the project directory (must contain raw/<prefix>_full.txt
+                     OR clean/<prefix>_EP*.txt).
         prefix: Project prefix (optional, defaults to project directory name).
     """
+    if not prefix:
+        prefix = os.path.basename(project_dir.rstrip("/\\"))
+
+    # Check if clean chapters already exist (Standard Ebooks auto-split)
+    clean_dir = os.path.join(project_dir, "clean")
+    if os.path.isdir(clean_dir):
+        existing = sorted([f for f in os.listdir(clean_dir)
+                          if f.startswith(f"{prefix}_EP") and f.endswith(".txt")])
+        if existing:
+            chapters = []
+            for f in existing:
+                ep_match = re.search(r'_EP(\d+)', f)
+                ep_id = f"EP{ep_match.group(1)}" if ep_match else "EP???"
+                chapters.append({"ep_id": ep_id, "file": f})
+            return {"status": "success", "chapters": len(chapters),
+                    "episodes": [c["ep_id"] for c in chapters],
+                    "source": "Standard Ebooks (pre-split)"}
+
     from engine.split_chapters import split_chapters
     try:
-        if not prefix:
-            prefix = os.path.basename(project_dir.rstrip("/\\"))
         chapters = split_chapters(project_dir, prefix)
         return {"status": "success", "chapters": len(chapters),
                 "episodes": [c["ep_id"] for c in chapters]}
